@@ -1,5 +1,5 @@
 # OpenGL-Sandbox
-This is a sandbox for me to experiment around with 3D graphics programming.
+This is a sandbox for me to experiment with 3D graphics programming.
 
 ## Building
 Todo

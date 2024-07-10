@@ -10,5 +10,10 @@ Todo
 ## Credits
 Todo
 
+-OpenGL
+-SDL2
+-GLAD
+-GLM
+
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)

@@ -1,5 +1,5 @@
 # OpenGL-Sandbox
-This is a sandbox for me to experiment with 3D graphics programming.
+Sandbox for experimenting with 3D graphics programming techniques.
 
 ## Building
 Todo
@@ -7,13 +7,18 @@ Todo
 ## Usage
 Todo
 
+Use WASDEQ to move. Rotate with the arrow keys. 
+
 ## Credits
 Todo
 
--OpenGL
--SDL2
--GLAD
--GLM
+- OpenGL & various extensions
+- SDL2
+- Glad
+- glm
+- fastgltf
+- Dear ImGui
+- stb
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)

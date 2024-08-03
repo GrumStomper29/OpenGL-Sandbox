@@ -49,6 +49,7 @@ public:
 		bool doubleSided{ false };
 		AlphaMode alphaMode{};
 
+		// todo: remove
 		GLuint ubo{};
 	};
 	struct MaterialUbo
@@ -79,14 +80,21 @@ public:
 		GLuint baseInstance{};
 	};
 
+	struct Meshlet
+	{
+		GLsizei indexOffset{};
+		GLsizei indexCount{};
+
+		GLuint drawIndirectBuffer{};
+
+		int triangleCount{};
+	};
+
 	struct Primitive
 	{
 		int material{ -1 };
 
-		GLsizei indexOffset{};
-		GLsizei indexCount{};
-		
-		GLuint drawIndirectBuffer{};
+		std::vector<Meshlet> meshlets{};
 	};
 
 	struct Mesh
@@ -102,16 +110,17 @@ public:
 		glm::mat4 localTransform{};
 	};
 
-	ModelObject(const std::filesystem::path& path, const std::filesystem::path& directory = "assets");
+	ModelObject(const std::filesystem::path& path, int vertexOffset, int indexOffset, const std::filesystem::path& directory = "assets");
 
 	ModelObject(const ModelObject&) = delete;
 	ModelObject& operator=(const ModelObject&) = delete;
 
 	~ModelObject();
 
-	void draw(const glm::mat4& transform, GLuint shaderProgram, AlphaMode alphaMode, int& triangles, int& draws);
+	void draw(const glm::mat4& transform, GLuint shaderProgram, AlphaMode alphaMode, int materialOffset, 
+		int& triangles, int& draws);
 	void renderNodeAndChildren(const Node& node, const glm::mat4& parentTransform, GLuint shaderProgram,
-		AlphaMode alphaMode, int& triangles, int& draws);
+		AlphaMode alphaMode, int materialOffset, int& triangles, int& draws);
 
 	std::vector<Node> mNodes{};
 	std::vector<int> mRootNodes{};
@@ -123,19 +132,22 @@ public:
 	std::vector<GLuint> mImages{};
 	std::vector<Texture> mTextures{};
 	
+	// Not yet bindless
 	std::vector<Material> mMaterials{};
+	std::vector<MaterialUbo> mMaterialBuffers{};
 
 	std::vector<Vertex> mVertices{};
 	std::vector<std::uint32_t> mIndices{};
 
-	GLuint mVbo{};
-	GLuint mIbo{};
-	GLuint mVao{};
+	// Not yet bindless
+	//GLuint mVbo{};
+	//GLuint mIbo{};
+	//GLuint mVao{};
 
 private:
 	
 	void loadNodes(const fastgltf::Expected<fastgltf::Asset>& asset);
-	void loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset);
+	void loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset, int vertexOffset, int globalIndexOffset);
 	void loadSamplers(const fastgltf::Expected<fastgltf::Asset>& asset);
 	void loadImages(const fastgltf::Expected<fastgltf::Asset>& asset);
 	void loadTextures(const fastgltf::Expected<fastgltf::Asset>& asset);

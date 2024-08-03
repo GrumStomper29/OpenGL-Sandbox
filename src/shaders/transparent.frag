@@ -1,4 +1,4 @@
-#version 420 core
+#version 430 core
 #extension GL_ARB_bindless_texture : require
 
 in VsOut
@@ -10,7 +10,7 @@ in VsOut
 
 
 
-layout(std140, binding = 1) uniform Material
+struct Material
 {
 	vec4 colorFactor;
 	float metallicFactor;
@@ -29,6 +29,13 @@ layout(std140, binding = 1) uniform Material
 	float alphaCutoff;
 };
 
+layout(binding = 1, std430) readonly buffer MaterialBlock
+{
+	Material materials[];
+};
+
+uniform int materialIndex;
+
 
 
 layout (location = 0) out vec4 accum;
@@ -40,13 +47,13 @@ void main()
 {
 	vec4 outColor = vec4(0.0f);
 
-	if (hasColorTex)
+	if (materials[materialIndex].hasColorTex)
 	{
-		outColor = (texture(sampler2D(baseColorTex), fsIn.uv)) * (colorFactor);
+		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * (materials[materialIndex].colorFactor);
 	}
 	else
 	{
-		outColor = colorFactor;
+		outColor = materials[materialIndex].colorFactor;
 	}
 	/*
 	const vec3 lightDir = normalize(const vec3(-2.0f, 8.0f, 1.0f));

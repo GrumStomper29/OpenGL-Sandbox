@@ -13,6 +13,8 @@
 
 #include "glad/glad.h"
 
+#include "meshoptimizer/meshoptimizer.h"
+
 #include <algorithm> // for transform & max
 #include <cmath>
 #include <cstddef> // for size_t
@@ -20,6 +22,7 @@
 #include <execution> // for std::execution::par
 #include <filesystem>
 #include <iostream>
+#include <random> // for mt19937
 #include <unordered_set>
 #include <variant>
 #include <vector>
@@ -50,7 +53,7 @@ glm::mat4 toGlmMat4(const fastgltf::math::fmat4x4& m)
 
 
 
-ModelObject::ModelObject(const std::filesystem::path& path, const std::filesystem::path& directory)
+ModelObject::ModelObject(const std::filesystem::path& path, int vertexOffset, int indexOffset, const std::filesystem::path& directory)
 {
 	fastgltf::Parser parser{};
 
@@ -88,7 +91,7 @@ ModelObject::ModelObject(const std::filesystem::path& path, const std::filesyste
 		mRootNodes[i] = asset->scenes[0].nodeIndices[i];
 	}
 
-	loadMeshes(asset);
+	loadMeshes(asset, vertexOffset, indexOffset);
 
 	loadSamplers(asset);
 	loadImages(asset);
@@ -106,7 +109,10 @@ ModelObject::~ModelObject()
 	{
 		for (const auto& primitive : mesh.primitives)
 		{
-			glDeleteBuffers(1, &primitive.drawIndirectBuffer);
+			for (const auto& meshlet : primitive.meshlets)
+			{
+				glDeleteBuffers(1, &meshlet.drawIndirectBuffer);
+			}
 		}
 	}
 
@@ -128,27 +134,30 @@ ModelObject::~ModelObject()
 
 	for (const auto& material : mMaterials)
 	{
-		glDeleteBuffers(1, &material.ubo);
+		//glDeleteBuffers(1, &material.ubo);
 	}
 
-	glDeleteVertexArrays(1, &mVao);
-	glDeleteBuffers(1, &mIbo);
-	glDeleteBuffers(1, &mVbo);
+	//glDeleteVertexArrays(1, &mVao);
+	//glDeleteBuffers(1, &mIbo);
+	//glDeleteBuffers(1, &mVbo);
 }
 
 
-void ModelObject::draw(const glm::mat4& transform, GLuint shaderProgram, AlphaMode alphaMode, int& triangles, int& draws)
+void ModelObject::draw(const glm::mat4& transform, GLuint shaderProgram, AlphaMode alphaMode, int materialOffset, int& triangles, int& draws)
 {
-	glBindVertexArray(mVao);
+	//glBindVertexArray(mVao);
 	for (auto rootNodeIndex : mRootNodes)
 	{
-		renderNodeAndChildren(mNodes[rootNodeIndex], transform, shaderProgram, alphaMode, triangles, draws);
+		renderNodeAndChildren(mNodes[rootNodeIndex], transform, shaderProgram, alphaMode, materialOffset, triangles, draws);
 	}
 }
 
 void ModelObject::renderNodeAndChildren(const Node& node, const glm::mat4& parentTransform, GLuint shaderProgram, 
-	AlphaMode alphaMode, int& triangles, int& draws)
+	AlphaMode alphaMode, int materialOffset, int& triangles, int& draws)
 {
+	std::mt19937 mt{};
+	std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
+
 	if (node.mesh != -1)
 	{
 		for (const auto& primitive : mMeshes[node.mesh].primitives)
@@ -162,7 +171,10 @@ void ModelObject::renderNodeAndChildren(const Node& node, const glm::mat4& paren
 					continue;
 				}
 
-				glBindBufferBase(GL_UNIFORM_BUFFER, 1, material.ubo);
+				//glBindBufferBase(GL_UNIFORM_BUFFER, 1, material.ubo);
+				// use array of buffers instead
+				auto loc{ glGetUniformLocation(shaderProgram, "materialIndex") };
+				glUniform1i(loc, primitive.material + materialOffset);
 
 				if (!material.doubleSided)
 				{
@@ -173,22 +185,33 @@ void ModelObject::renderNodeAndChildren(const Node& node, const glm::mat4& paren
 					glDisable(GL_CULL_FACE);
 				}
 			}
-
+			
 			auto loc{ glGetUniformLocation(shaderProgram, "model") };
 			glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(parentTransform * node.localTransform));
+			/*
+			loc = { glGetUniformLocation(shaderProgram, "meshletCol") };
+			glUniform3fv(loc, 1, glm::value_ptr(glm::vec3{ dis(mt), dis(mt), dis(mt) }));
 
-			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, primitive.drawIndirectBuffer);
-			glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, primitive.meshlets[0].drawIndirectBuffer);
+			*/
+			for (const auto& meshlet : primitive.meshlets)
+			{
+				loc = { glGetUniformLocation(shaderProgram, "meshletCol") };
+				glUniform3fv(loc, 1, glm::value_ptr(glm::vec3{ dis(mt), dis(mt), dis(mt) }));
 
-			triangles += primitive.indexCount / 3;
-			draws++;
+				glBindBuffer(GL_DRAW_INDIRECT_BUFFER, meshlet.drawIndirectBuffer);
+				glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+
+				triangles += meshlet.triangleCount;
+				draws++;
+			}
 		}
 	}
 
 	for (auto childIndex : node.children)
 	{
 		renderNodeAndChildren(mNodes[childIndex], parentTransform * node.localTransform, shaderProgram,
-			alphaMode, triangles, draws);
+			alphaMode, materialOffset, triangles, draws);
 	}
 }
 
@@ -217,7 +240,7 @@ void ModelObject::loadNodes(const fastgltf::Expected<fastgltf::Asset>& asset)
 	}
 }
 
-void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset)
+void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset, int vertexOffset, int globalIndexOffset)
 {
 	mMeshes.resize(asset->meshes.size());
 	for (int i{ 0 }; i < asset->meshes.size(); ++i)
@@ -230,28 +253,37 @@ void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset)
 
 			Primitive& newPrimitive{ mMeshes[i].primitives[n] };
 
+			std::vector<Vertex> tmpVerts{};
+			std::vector<GLuint> tmpIndices{};
+
+			std::size_t indexOffset{ mIndices.size() };
+
 			{
 				auto accessor{ asset->accessors[asset->meshes[i].primitives[n].indicesAccessor.value()] };
 
-				std::size_t indexOffset{ mIndices.size() };
-				newPrimitive.indexOffset = indexOffset;
+				//std::size_t indexOffset{ mIndices.size() };
+				//newPrimitive.indexOffset = indexOffset;
 
-				mIndices.resize(mIndices.size() + accessor.count);
+				//mIndices.resize(mIndices.size() + accessor.count);
+				tmpIndices.resize(accessor.count);
 
-				newPrimitive.indexCount = accessor.count;
+				//newPrimitive.indexCount = accessor.count;
 
 				fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset.get(), accessor, [&](std::uint32_t val, std::size_t k) {
-					mIndices[indexOffset + k] = val + vertOffset;
+					//mIndices[indexOffset + k] = val + vertOffset;
+					tmpIndices[k] = val;
 					});
 			}
 
 			{
 				auto accessor{ asset->accessors[asset->meshes[i].primitives[n].findAttribute("POSITION")->second] };
 
-				mVertices.resize(mVertices.size() + accessor.count);
+				//mVertices.resize(mVertices.size() + accessor.count);
+				tmpVerts.resize(accessor.count);
 
 				fastgltf::iterateAccessorWithIndex<glm::vec3>(asset.get(), accessor, [&](glm::vec3 v, std::size_t k) {
-					mVertices[vertOffset + k].pos = v;
+					//mVertices[vertOffset + k].pos = v;
+					tmpVerts[k].pos = v;
 					});
 			}
 
@@ -263,7 +295,8 @@ void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset)
 					auto accessor{ asset->accessors[normals->second] };
 
 					fastgltf::iterateAccessorWithIndex<glm::vec3>(asset.get(), accessor, [&](glm::vec3 v, std::size_t k) {
-						mVertices[vertOffset + k].normal = v;
+						//mVertices[vertOffset + k].normal = v;
+						tmpVerts[k].normal = v;
 						});
 
 				}
@@ -282,25 +315,63 @@ void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset)
 					auto accessor{ asset->accessors[uvs->second] };
 
 					fastgltf::iterateAccessorWithIndex<glm::vec2>(asset.get(), accessor, [&](glm::vec2 v, std::size_t k) {
-						mVertices[vertOffset + k].uv = v;
+						//mVertices[vertOffset + k].uv = v;
+						tmpVerts[k].uv = v;
 						});
 
 				}
 			}
 
-			newPrimitive.material = asset->meshes[i].primitives[n].materialIndex.value_or(-1);
-			
-			DrawIndirect indirect
-			{
-				.count{ static_cast<GLuint>(newPrimitive.indexCount) },
-				.instanceCount{ 1 },
-				.firstIndex{ static_cast<GLuint>(newPrimitive.indexOffset) },
-				.baseVertex{ 0 },
-				.baseInstance{ 0 },
-			};
+			std::size_t maxMeshlets{ meshopt_buildMeshletsBound(tmpIndices.size(), 64, 124) };
+			std::vector<meshopt_Meshlet> meshlets(maxMeshlets);
+			std::vector<unsigned int> meshletVertices(maxMeshlets * 64);
+			std::vector<unsigned char> meshletTriangles(maxMeshlets * 124 * 3);
 
-			glCreateBuffers(1, &newPrimitive.drawIndirectBuffer);
-			glNamedBufferData(newPrimitive.drawIndirectBuffer, sizeof(DrawIndirect), &indirect, GL_STATIC_DRAW);
+			std::size_t meshletCount{ meshopt_buildMeshlets(meshlets.data(), meshletVertices.data(),
+				meshletTriangles.data(), tmpIndices.data(), tmpIndices.size(), &tmpVerts[0].pos.x, tmpVerts.size(),
+				sizeof(ModelObject::Vertex), 64, 124, 0.0f) };
+
+			const meshopt_Meshlet& last{ meshlets[meshletCount - 1] };
+			meshletVertices.resize(last.vertex_offset + last.vertex_count);
+			meshletTriangles.resize(last.triangle_offset + ((last.triangle_count * 3 + 3) & ~3));
+			meshlets.resize(meshletCount);
+
+			// Primitive so far is stored in temp buffers
+			// Generate meshlets from there
+			// Add results to bindless buffer
+			// This can be optimized
+			mIndices.resize(mIndices.size() + meshletTriangles.size());
+			for (int i{ 0 }; i < meshletTriangles.size(); ++i)
+			{
+				mIndices[indexOffset + i] = static_cast<GLuint>(meshletTriangles[i]) + vertOffset;
+			}
+			
+			mVertices.resize(mVertices.size() + meshletVertices.size());
+			for (int i{ 0 }; i < meshletVertices.size(); ++i)
+			{
+				mVertices[vertOffset + i] = tmpVerts[meshletVertices[i]];
+			}
+
+			newPrimitive.meshlets.resize(meshlets.size());
+			for (int i{ 0 }; i < meshlets.size(); ++i)
+			{
+				DrawIndirect indirect
+				{
+					.count{ static_cast<GLuint>(meshlets[i].triangle_count * 3) },
+					.instanceCount{ 1 },
+					.firstIndex{ static_cast<GLuint>(indexOffset) + meshlets[i].triangle_offset + 
+						static_cast<GLuint>(globalIndexOffset) }, // ensure
+					.baseVertex{ static_cast<GLint>(meshlets[i].vertex_offset) + vertexOffset },
+					.baseInstance{ 0 },
+				};
+
+				glCreateBuffers(1, &newPrimitive.meshlets[i].drawIndirectBuffer);
+				glNamedBufferData(newPrimitive.meshlets[i].drawIndirectBuffer, sizeof(DrawIndirect), &indirect, GL_STATIC_DRAW);
+
+				newPrimitive.meshlets[i].triangleCount = meshlets[i].triangle_count;
+			}
+
+			newPrimitive.material = asset->meshes[i].primitives[n].materialIndex.value_or(-1);
 		}
 	}
 }
@@ -356,11 +427,11 @@ void ModelObject::loadImages(const fastgltf::Expected<fastgltf::Asset>& asset)
 
 	std::vector<ImageData> datas(asset->images.size());
 
-	std::transform(std::execution::par, asset->images.cbegin(), asset->images.cend(), datas.begin(), 
+	std::transform(std::execution::par, asset->images.cbegin(), asset->images.cend(), datas.begin(),
 		[&](const fastgltf::Image& image) -> ImageData {
 
 			ImageData data{};
-			
+
 			if (std::holds_alternative<fastgltf::sources::BufferView>(image.data))
 			{
 				const auto& bufferView{ asset->bufferViews[
@@ -388,16 +459,16 @@ void ModelObject::loadImages(const fastgltf::Expected<fastgltf::Asset>& asset)
 			{
 				std::cerr << "Warning: unrecognized image data source.";
 			}
-			
+
 			return data;
 		});
-	
+
 	mImages.resize(asset->images.size());
 	for (int i{ 0 }; i < asset->images.size(); ++i)
 	{
 		// GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 		glCreateTextures(GL_TEXTURE_2D, 1, &mImages[i]);
-		glTextureStorage2D(mImages[i], std::floor(std::log2(std::max(datas[i].width, datas[i].width))) + 1, 
+		glTextureStorage2D(mImages[i], std::floor(std::log2(std::max(datas[i].width, datas[i].width))) + 1,
 			GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, datas[i].width, datas[i].height);
 		glTextureSubImage2D(mImages[i], 0, 0, 0, datas[i].width, datas[i].height, GL_RGBA, GL_UNSIGNED_BYTE, datas[i].data);
 
@@ -405,7 +476,7 @@ void ModelObject::loadImages(const fastgltf::Expected<fastgltf::Asset>& asset)
 
 		glGenerateTextureMipmap(mImages[i]);
 	}
-	
+
 }
 
 void ModelObject::loadTextures(const fastgltf::Expected<fastgltf::Asset>& asset)
@@ -440,6 +511,7 @@ void ModelObject::loadTextures(const fastgltf::Expected<fastgltf::Asset>& asset)
 void ModelObject::loadMaterials(const fastgltf::Expected<fastgltf::Asset>& asset)
 {
 	mMaterials.resize(asset->materials.size());
+	mMaterialBuffers.resize(mMaterials.size());
 	for (int i{ 0 }; i < asset->materials.size(); ++i)
 	{
 		mMaterials[i].colorFactor =
@@ -449,6 +521,7 @@ void ModelObject::loadMaterials(const fastgltf::Expected<fastgltf::Asset>& asset
 			asset->materials[i].pbrData.baseColorFactor.z(),
 			asset->materials[i].pbrData.baseColorFactor.w(),
 		};
+
 		mMaterials[i].metallicFactor = asset->materials[i].pbrData.metallicFactor;
 		mMaterials[i].roughnessFactor = asset->materials[i].pbrData.roughnessFactor;
 		
@@ -499,14 +572,17 @@ void ModelObject::loadMaterials(const fastgltf::Expected<fastgltf::Asset>& asset
 			.alphaMask{ mMaterials[i].alphaMode == MASK },
 			.alphaCutoff{ asset->materials[i].alphaCutoff },
 		};
+		mMaterialBuffers[i] = uboData;
 
-		glCreateBuffers(1, &mMaterials[i].ubo);
-		glNamedBufferData(mMaterials[i].ubo, sizeof(MaterialUbo), &uboData, GL_STATIC_DRAW);
+		// todo: delete
+		//glCreateBuffers(1, &mMaterials[i].ubo);
+		//glNamedBufferData(mMaterials[i].ubo, sizeof(MaterialUbo), &uboData, GL_STATIC_DRAW);
 	}
 }
 
 void ModelObject::uploadGeometry()
 {
+	/*
 	glCreateBuffers(1, &mVbo);
 	glNamedBufferStorage(mVbo, sizeof(Vertex) * mVertices.size(), mVertices.data(), GL_NONE);
 
@@ -529,4 +605,5 @@ void ModelObject::uploadGeometry()
 	glVertexArrayAttribBinding(mVao, 0, 0);
 	glVertexArrayAttribBinding(mVao, 1, 0);
 	glVertexArrayAttribBinding(mVao, 2, 0);
+	*/
 }

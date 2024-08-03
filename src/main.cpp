@@ -27,6 +27,8 @@
 
 #include <unordered_map>
 
+#include "meshoptimizer/meshoptimizer.h"
+
 GLuint compileShader(const std::string& filename, GLenum type)
 {
 	std::ifstream inputStream{ filename };
@@ -69,6 +71,14 @@ void linkShaderProgram(ShaderProgram& shaderProgram)
 	glAttachShader(shaderProgram.program, vertexShader);
 	glAttachShader(shaderProgram.program, fragmentShader);
 	glLinkProgram(shaderProgram.program);
+
+	GLint success{};
+	glGetProgramiv(shaderProgram.program, GL_LINK_STATUS, &success);
+	if (!success) {
+		GLchar infoLog[512]{};
+		glGetProgramInfoLog(shaderProgram.program, 512, nullptr, infoLog);
+		std::cerr << infoLog << '\n';
+	}
 
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
@@ -119,6 +129,16 @@ struct Stats
 	int drawcallCount{};
 };
 
+// todo: destruct
+struct Scene
+{
+	GLuint materialsSsbo{};
+
+	GLuint vbo{};
+	GLuint ibo{};
+	GLuint vao{};
+};
+
 int main()
 {
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -166,9 +186,65 @@ int main()
 	ImGui_ImplSDL2_InitForOpenGL(window, glContext);
 	ImGui_ImplOpenGL3_Init();
 
-	ModelObject model{ "assets/Bistro1.glb" };
+	Scene scene{};
+
+	ModelObject model{ "assets/Bistro1.glb", 0, 0 };
 	//ModelObject model{ "assets/Sponza/NewSponza_Main_glTF_002.gltf", "assets/Sponza" };
+	//ModelObject model{ "assets/house.glb" };
 	//ModelObject model{ "assets/deccer2.glb" };
+
+	ModelObject model1{ "assets/cubes.glb", static_cast<int>(model.mVertices.size()), 
+		static_cast<int>(model.mIndices.size()) };
+	//ModelObject model1{ "assets/cubes.glb" };
+
+	GLsizei materialCount{ static_cast<GLsizei>(model.mMaterials.size() + model1.mMaterials.size()) };
+	// collecting them on cpu and making 1 pass: faster
+	// making multiple passes and collecting on gpu: more flexible, nicer code, not slower than original approach
+
+	glCreateBuffers(1, &scene.materialsSsbo);
+	glNamedBufferData(scene.materialsSsbo, materialCount * sizeof(ModelObject::MaterialUbo), nullptr, GL_STATIC_DRAW);
+	
+	glNamedBufferSubData(scene.materialsSsbo, 0, model.mMaterials.size() * sizeof(ModelObject::MaterialUbo), model.mMaterialBuffers.data());
+	glNamedBufferSubData(scene.materialsSsbo, model.mMaterials.size() * sizeof(ModelObject::MaterialUbo),
+		model1.mMaterials.size() * sizeof(ModelObject::MaterialUbo), model1.mMaterialBuffers.data());
+
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, scene.materialsSsbo);
+
+	
+	GLsizei vertexCount{ static_cast<GLsizei>(model.mVertices.size() + model1.mVertices.size()) };
+	GLsizei indexCount{ static_cast<GLsizei>(model.mIndices.size() + model1.mIndices.size()) };
+
+	glCreateBuffers(1, &scene.vbo);
+	glNamedBufferStorage(scene.vbo, sizeof(ModelObject::Vertex) * vertexCount, nullptr, GL_DYNAMIC_STORAGE_BIT);
+
+	glNamedBufferSubData(scene.vbo, 0, sizeof(ModelObject::Vertex) * model.mVertices.size(), model.mVertices.data());
+	glNamedBufferSubData(scene.vbo, sizeof(ModelObject::Vertex) * model.mVertices.size(), 
+		sizeof(ModelObject::Vertex) * model1.mVertices.size(), model1.mVertices.data());
+
+	glCreateBuffers(1, &scene.ibo);
+	glNamedBufferStorage(scene.ibo, sizeof(std::uint32_t) * indexCount, nullptr, GL_DYNAMIC_STORAGE_BIT); // todo: use 8 bit indices
+
+	glNamedBufferSubData(scene.ibo, 0, sizeof(std::uint32_t) * model.mIndices.size(), model.mIndices.data());
+	glNamedBufferSubData(scene.ibo, sizeof(std::uint32_t) * model.mIndices.size(), 
+		sizeof(std::uint32_t) * model1.mIndices.size(), model1.mIndices.data());
+
+	glCreateVertexArrays(1, &scene.vao);
+
+	glVertexArrayVertexBuffer(scene.vao, 0, scene.vbo, 0, sizeof(ModelObject::Vertex));
+	glVertexArrayElementBuffer(scene.vao, scene.ibo);
+
+	glEnableVertexArrayAttrib(scene.vao, 0);
+	glEnableVertexArrayAttrib(scene.vao, 1);
+	glEnableVertexArrayAttrib(scene.vao, 2);
+
+	glVertexArrayAttribFormat(scene.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribFormat(scene.vao, 1, 3, GL_FLOAT, GL_FALSE, offsetof(ModelObject::Vertex, normal));
+	glVertexArrayAttribFormat(scene.vao, 2, 2, GL_FLOAT, GL_FALSE, offsetof(ModelObject::Vertex, uv));
+
+	glVertexArrayAttribBinding(scene.vao, 0, 0);
+	glVertexArrayAttribBinding(scene.vao, 1, 0);
+	glVertexArrayAttribBinding(scene.vao, 2, 0);
+	
 
 	float screenQuadVerts[] = {
 		// Position				// UV
@@ -197,12 +273,13 @@ int main()
 
 	glVertexArrayAttribBinding(screenQuadVAO, 0, 0);
 	glVertexArrayAttribBinding(screenQuadVAO, 1, 0);
-	
+
 	std::unordered_map<std::string, ShaderProgram> shaderPrograms;
 
 	shaderPrograms["uber"] = { "src/shaders/uber.vert", "src/shaders/uber.frag" };
 	shaderPrograms["transparent"] = { "src/shaders/uber.vert", "src/shaders/transparent.frag" };
 	shaderPrograms["comp"] = { "src/shaders/comp.vert", "src/shaders/comp.frag" };
+	shaderPrograms["lighting"] = { "src/shaders/comp.vert", "src/shaders/lighting.frag" };
 
 	for (auto& [name, shaderProgram] : shaderPrograms)
 	{
@@ -215,12 +292,23 @@ int main()
 	GLuint opaqueTexture{};
 	glCreateTextures(GL_TEXTURE_2D, 1, &opaqueTexture);
 	glTextureStorage2D(opaqueTexture, 1, GL_RGBA16F, screenWidth, screenHeight);
+	GLuint normalTexture{};
+	glCreateTextures(GL_TEXTURE_2D, 1, &normalTexture);
+	glTextureStorage2D(normalTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats
+	GLuint positionTexture{};
+	glCreateTextures(GL_TEXTURE_2D, 1, &positionTexture);
+	glTextureStorage2D(positionTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: storing positions is worse than just calculating them
 	GLuint depthTexture{};
 	glCreateTextures(GL_TEXTURE_2D, 1, &depthTexture);
 	glTextureStorage2D(depthTexture, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
 
-	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture, 0);
-	glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT, depthTexture, 0);
+	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture,   0);
+	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,   0);
+	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT2, positionTexture, 0); // todo: redundant
+	glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,    0);
+
+	GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+	glNamedFramebufferDrawBuffers(opaqueFBO, 3, drawBuffersG);
 
 	GLuint transparentFBO{};
 	glCreateFramebuffers(1, &transparentFBO);
@@ -235,9 +323,24 @@ int main()
 	glNamedFramebufferTexture(transparentFBO, GL_COLOR_ATTACHMENT0, accumTexture, 0);
 	glNamedFramebufferTexture(transparentFBO, GL_COLOR_ATTACHMENT1, revealTexture, 0);
 	glNamedFramebufferTexture(transparentFBO, GL_DEPTH_ATTACHMENT, depthTexture, 0);
-	
+
 	GLenum drawBuffers[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
 	glNamedFramebufferDrawBuffers(transparentFBO, 2, drawBuffers);
+
+	/*
+	GLuint gBuffer{};
+	glCreateFramebuffers(1, &gBuffer);
+
+	GLuint gColor{};
+	glCreateTextures(GL_TEXTURE_2D, 1, &gColor);
+	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight);
+	GLuint gNormal{};
+	glCreateTextures(GL_TEXTURE_2D, 1, &gNormal);
+	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats
+	GLuint gPosition{};
+	glCreateTextures(GL_TEXTURE_2D, 1, &gPosition);
+	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight);
+	*/
 
 	//if (glCheckNamedFramebufferStatus(transparentFBO, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 	//	std::cerr << "framebuffer error\n";
@@ -327,7 +430,7 @@ int main()
 		auto start{ std::chrono::system_clock::now() };
 
 		glm::mat4 view{ camera.getViewMatrix() };
-		auto p{ glm::perspective(90.0f, 16.0f / 9.0f, 0.25f, 10000.0f) };
+		auto p{ glm::perspective(camera.mFov, 16.0f / 9.0f, 0.25f, 10000.0f) };
 		auto tp{ p * view };
 
 		ImGui_ImplOpenGL3_NewFrame();
@@ -356,6 +459,8 @@ int main()
 		stats.triangleCount = 0;
 		stats.drawcallCount = 0;
 		
+		glBindVertexArray(scene.vao);
+
 		{
 			glEnable(GL_DEPTH_TEST);
 			glDepthFunc(GL_LESS);
@@ -377,8 +482,12 @@ int main()
 			model.draw(glm::translate(glm::mat4{ 1.0f }, { 0.0f, 0.0f, 0.0f }), 
 				shaderPrograms.at("uber").program, 
 				static_cast<ModelObject::AlphaMode>(ModelObject::OPAQUE | ModelObject::MASK),
-				stats.triangleCount, stats.drawcallCount);
-			
+				0, stats.triangleCount, stats.drawcallCount);
+			model1.draw(glm::translate(glm::mat4{ 1.0f }, { 0.0f, 0.0f, 0.0f }),
+				shaderPrograms.at("uber").program,
+				static_cast<ModelObject::AlphaMode>(ModelObject::OPAQUE | ModelObject::MASK),
+				model.mMaterials.size(), stats.triangleCount, stats.drawcallCount);
+
 			glDepthMask(GL_FALSE);
 			glEnable(GL_BLEND);
 			glBlendFunci(0, GL_ONE, GL_ONE);
@@ -400,27 +509,45 @@ int main()
 			glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
 			
 			model.draw({ 1.0f }, shaderPrograms.at("transparent").program, ModelObject::BLEND,
-				stats.triangleCount, stats.drawcallCount);
+				0, stats.triangleCount, stats.drawcallCount);
+			model1.draw({ 1.0f }, shaderPrograms.at("transparent").program, ModelObject::BLEND,
+				model.mMaterials.size(), stats.triangleCount, stats.drawcallCount);
 
 			glDepthFunc(GL_ALWAYS);
+			glDisable(GL_BLEND);
+
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+			glUseProgram(shaderPrograms.at("lighting").program);
+
+			glBindTextureUnit(0, opaqueTexture);
+			glBindTextureUnit(1, normalTexture);
+			glBindTextureUnit(2, positionTexture);
+
+			glBindVertexArray(screenQuadVAO);
+
+			glDrawArrays(GL_TRIANGLES, 0, 6);
+			
+			// comp pass
 			glEnable(GL_BLEND);
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-			glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
 
 			glUseProgram(shaderPrograms.at("comp").program);
 
 			glBindTextureUnit(0, accumTexture);
 			glBindTextureUnit(1, revealTexture);
+			//glBindTextureUnit(2, opaqueTexture);
+			//glBindTextureUnit(3, normalTexture);
+			//glBindTextureUnit(4, positionTexture);
 
 			glBindVertexArray(screenQuadVAO);
 
 			glDrawArrays(GL_TRIANGLES, 0, 6);
 		}
 
-		glBlitNamedFramebuffer(opaqueFBO, 0, 0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		//glBlitNamedFramebuffer(opaqueFBO, 0, 0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -431,6 +558,12 @@ int main()
 		auto elapsed{ std::chrono::duration_cast<std::chrono::microseconds>(end - start) };
 		stats.frameTime = elapsed.count() / 1000.0f;
 	}
+
+	glDeleteVertexArrays(1, &scene.vao);
+	glDeleteBuffers(1, &scene.vbo);
+	glDeleteBuffers(1, &scene.ibo);
+
+	glDeleteBuffers(1, &scene.materialsSsbo);
 
 	for (auto& [name, shaderProgram] : shaderPrograms)
 	{

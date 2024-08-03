@@ -72,6 +72,9 @@
     <ClCompile Include="src\camera\camera.cpp">
       <Filter>Source Files\Camera</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\meshoptimizer\clusterizer.cpp">
+      <Filter>Source Files\Third Party</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="third_party\sdl\begin_code.h">
@@ -359,6 +362,9 @@
       <Filter>Source Files\Shaders</Filter>
     </None>
     <None Include="src\shaders\comp.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="src\shaders\lighting.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
   </ItemGroup>

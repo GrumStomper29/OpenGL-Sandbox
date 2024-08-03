@@ -20,7 +20,7 @@ public:
 
 	glm::vec3 mPos{};
 	glm::vec2 mRot{ 0.0f, -90.0f };
-	float mFov{ 90.0f };
+	float mFov{ 75.0f };
 
 private:
 

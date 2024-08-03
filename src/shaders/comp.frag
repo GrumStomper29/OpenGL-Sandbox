@@ -4,6 +4,9 @@
 
 layout (binding = 0) uniform sampler2D accum;
 layout (binding = 1) uniform sampler2D reveal;
+//layout (binding = 2) uniform sampler2D inColor;
+//layout (binding = 3) uniform sampler2D inNorm;
+//layout (binding = 4) uniform sampler2D inPos;
 
 layout (location = 0) out vec4 outColor;
 
@@ -27,6 +30,8 @@ void main()
 {
 	ivec2 coords = ivec2(gl_FragCoord.xy);
 
+	//outColor = texelFetch(inColor, coords, 0);
+	
 	float revealage = texelFetch(reveal, coords, 0).r;
 
 	if (isApproximatelyEqual(revealage, 1.0f))

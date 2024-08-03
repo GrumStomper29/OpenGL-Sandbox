@@ -1,4 +1,4 @@
-#version 420 core
+#version 430 core
 #extension GL_ARB_bindless_texture : require
 
 in VsOut
@@ -10,7 +10,7 @@ in VsOut
 
 
 
-layout (std140, binding = 1) uniform Material
+struct Material
 {
 	vec4 colorFactor;
 	float metallicFactor;
@@ -29,9 +29,19 @@ layout (std140, binding = 1) uniform Material
 	float alphaCutoff;
 };
 
+layout (binding = 1, std430) readonly buffer MaterialBlock
+{
+	Material materials[];
+};
+
+uniform vec3 meshletCol;
+
+uniform int materialIndex;
 
 
 out vec4 outColor;
+out vec4 outNorm;
+out vec4 outPos;
 
 
 // From http://www.thetenthplanet.de/archives/1180
@@ -53,7 +63,7 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv)
 
 vec3 perturbNormal(vec3 normal, vec3 viewspacePos, vec2 uv)
 {
-	vec3 map = texture(sampler2D(normalTex), uv).rgb;
+	vec3 map = texture(sampler2D(materials[materialIndex].normalTex), uv).rgb;
 	map = map * 2.0f - 1.0f;
 	mat3 tbn = cotangentFrame(normal, -viewspacePos, uv);
 	return normalize(tbn * map);
@@ -61,36 +71,31 @@ vec3 perturbNormal(vec3 normal, vec3 viewspacePos, vec2 uv)
 
 void main()
 {
-	if (hasColorTex)
+	if (materials[materialIndex].hasColorTex)
 	{
-		outColor = (texture(sampler2D(baseColorTex), fsIn.uv)) * (colorFactor);
+		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * (materials[materialIndex].colorFactor);
 	}
 	else
 	{
-		outColor = colorFactor;
+		outColor = materials[materialIndex].colorFactor;
 	}
 
-	if (alphaMask)
+	if (materials[materialIndex].alphaMask)
 	{
-		if (outColor.a < alphaCutoff)
+		if (outColor.a < materials[materialIndex].alphaCutoff)
 		{
 			discard;
 		}
 	}
 
-	vec3 fragNorm = normalize(fsIn.norm);
-	fragNorm = perturbNormal(fragNorm, fsIn.camPosMinusWorldVert, fsIn.uv);
+	outNorm = vec4(normalize(fsIn.norm), 0.0f);
+	if (materials[materialIndex].hasNormalTex)
+	{
+		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, fsIn.uv), 1.0f);
+	}
 
-	const vec3 lightDir = normalize(const vec3(-2.0f, 8.0f, 1.0f));
-	const vec3 lightCol = const vec3(1.0f);
+	// Todo: remove
+	outPos = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-	const float ambientStrength = 0.4f;
-	const vec3 ambient = ambientStrength * lightCol;
-
-	float diffuse = max(dot(normalize(fragNorm), lightDir), -1.0f); // changed to -1
-
-	//outColor = vec4((diffuse * lightCol + ambient), 1.0f) * outColor;
-
-	diffuse = (diffuse + 1.0f) / 2.0f;
-	outColor = vec4((diffuse * lightCol), 1.0f) * outColor;
+	//outColor = vec4(meshletCol, 1.0f);
 }

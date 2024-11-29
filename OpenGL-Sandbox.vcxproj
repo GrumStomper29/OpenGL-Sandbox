@@ -155,6 +155,7 @@
     <ClCompile Include="src\camera\camera.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\model\model.cpp" />
+    <ClCompile Include="src\scene\scene.cpp" />
     <ClCompile Include="third_party\fastgltf\base64.cpp" />
     <ClCompile Include="third_party\fastgltf\fastgltf.cpp" />
     <ClCompile Include="third_party\fastgltf\io.cpp" />
@@ -172,6 +173,7 @@
   <ItemGroup>
     <ClInclude Include="src\camera\camera.hpp" />
     <ClInclude Include="src\model\model.hpp" />
+    <ClInclude Include="src\scene\scene.hpp" />
     <ClInclude Include="third_party\sdl\begin_code.h" />
     <ClInclude Include="third_party\sdl\close_code.h" />
     <ClInclude Include="third_party\sdl\SDL.h" />
@@ -266,6 +268,7 @@
     <None Include="src\shaders\comp.vert" />
     <None Include="src\shaders\lighting.frag" />
     <None Include="src\shaders\transparent.frag" />
+    <None Include="src\shaders\triangle_cull.comp" />
     <None Include="src\shaders\uber.frag" />
     <None Include="src\shaders\uber.vert" />
   </ItemGroup>

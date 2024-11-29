@@ -6,27 +6,43 @@ in VsOut
 	vec3 norm;
 	vec2 uv;
 	vec3 camPosMinusWorldVert;
+	flat uint clusterId;
 } fsIn;
 
+struct Cluster
+{
+	uint transformIndex;
+	int materialIndex;
 
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+};
+layout(binding = 0, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
 
 struct Material
 {
 	vec4 colorFactor;
+
+	uvec2 baseColorTex;
+	uvec2 metallicRoughnessTex;
+	uvec2 normalTex;
+
 	float metallicFactor;
 	float roughnessFactor;
 
 	bool hasColorTex;
-	uvec2 baseColorTex;
-
 	bool hasMetallicRoughnessTex;
-	uvec2 metallicRoughnessTex;
-
 	bool hasNormalTex;
-	uvec2 normalTex;
 
 	bool alphaMask;
 	float alphaCutoff;
+	bool alphaBlend;
+
+	uvec2 padding;
 };
 
 layout(binding = 1, std430) readonly buffer MaterialBlock
@@ -34,7 +50,7 @@ layout(binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
-uniform int materialIndex;
+//uniform int materialIndex;
 
 
 
@@ -45,6 +61,8 @@ layout (location = 1) out float reveal;
 
 void main()
 {
+	int materialIndex = clusters[fsIn.clusterId].materialIndex;
+
 	vec4 outColor = vec4(0.0f);
 
 	if (materials[materialIndex].hasColorTex)

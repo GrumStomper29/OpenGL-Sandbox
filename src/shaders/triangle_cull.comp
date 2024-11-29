@@ -1,0 +1,135 @@
+// todo: name
+
+#version 430 core
+
+uniform uint clusterCount;
+
+layout(binding = 0, std430) readonly buffer IndexBuffer
+{
+	uint indices[];
+};
+
+layout (binding = 1, std430) buffer IndirectDrawBuffer
+{
+	uint count;
+	uint instanceCount;
+	uint firstIndex;
+	int baseVertex;
+	uint baseInstance;
+} indirectDraw;
+
+struct Cluster
+{
+	uint transformIndex;
+	int materialIndex;
+
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+};
+layout (binding = 2, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
+
+layout (binding = 3, std430) buffer IndexWriteBuffer
+{
+	uint writeIndices[];
+};
+
+
+layout (binding = 4, std430) buffer IndirectBlendDrawBuffer
+{
+	uint count;
+	uint instanceCount;
+	uint firstIndex;
+	int baseVertex;
+	uint baseInstance;
+} indirectBlendDraw;
+
+layout (binding = 5, std430) buffer BlendIndexWriteBuffer
+{
+	uint writeBlendIndices[];
+};
+
+struct Material
+{
+	vec4 colorFactor;
+
+	uvec2 baseColorTex;
+	uvec2 metallicRoughnessTex;
+	uvec2 normalTex;
+
+	float metallicFactor;
+	float roughnessFactor;
+
+	bool hasColorTex;
+	bool hasMetallicRoughnessTex;
+	bool hasNormalTex;
+
+	bool alphaMask;
+	float alphaCutoff;
+	bool alphaBlend;
+
+	uvec2 padding;
+};
+layout (binding = 6, std430) readonly buffer MaterialBlock
+{
+	Material materials[];
+};
+
+
+// per cluster
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	uint clusterId = 
+		gl_WorkGroupID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
+		gl_WorkGroupID.y * gl_NumWorkGroups.x +
+		gl_WorkGroupID.x;
+
+	if (clusterId >= clusterCount)
+	{
+		return;
+	}
+
+	// do culling stuff
+
+	if (materials[clusters[clusterId].materialIndex].alphaBlend)
+	{
+		uint bufferStart = atomicAdd(indirectBlendDraw.count, clusters[clusterId].indexCount);
+
+		for (int i = 0; i < clusters[clusterId].indexCount; i++)
+		{
+			// 25 bits for cluster id, 7 bits for index
+			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+			writeBlendIndices[bufferStart + i] = index;
+		}
+	}
+	else
+	{
+		uint bufferStart = atomicAdd(indirectDraw.count, clusters[clusterId].indexCount);
+
+		for (int i = 0; i < clusters[clusterId].indexCount; i++)
+		{
+			// 25 bits for cluster id, 7 bits for index
+			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+			writeIndices[bufferStart + i] = index;
+		}
+	}
+}
+
+/*
+At load time:
+Have transforms (per primitive) and materials on GPU
+Need array of all meshlets
+
+Generate empty index buffer large enough to store every single triangle in scene
+Generate empty indirect draw buffer
+
+At run:
+Upload per primitive array that notes what meshlets need rendered
+
+Loop through each meshlet and add all its triangles into a large index buffer, each index being encoded with material/transform data
+Update indirect draw buffer
+*/

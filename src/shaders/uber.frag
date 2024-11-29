@@ -6,27 +6,43 @@ in VsOut
 	vec3 norm;
 	vec2 uv;
 	vec3 camPosMinusWorldVert;
+	flat uint clusterId;
 } fsIn;
 
+struct Cluster
+{
+	uint transformIndex;
+	int materialIndex;
 
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+};
+layout(binding = 0, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
 
 struct Material
 {
 	vec4 colorFactor;
+
+	uvec2 baseColorTex;
+	uvec2 metallicRoughnessTex;
+	uvec2 normalTex;
+
 	float metallicFactor;
 	float roughnessFactor;
 
 	bool hasColorTex;
-	uvec2 baseColorTex;
-
 	bool hasMetallicRoughnessTex;
-	uvec2 metallicRoughnessTex;
-
 	bool hasNormalTex;
-	uvec2 normalTex;
 
 	bool alphaMask;
 	float alphaCutoff;
+	bool alphaBlend;
+
+	uvec2 padding;
 };
 
 layout (binding = 1, std430) readonly buffer MaterialBlock
@@ -36,12 +52,11 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 
 uniform vec3 meshletCol;
 
-uniform int materialIndex;
+//uniform int materialIndex;
 
 
 out vec4 outColor;
 out vec4 outNorm;
-out vec4 outPos;
 
 
 // From http://www.thetenthplanet.de/archives/1180
@@ -61,7 +76,7 @@ mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv)
 	return mat3(T * invmax, B * invmax, N);
 }
 
-vec3 perturbNormal(vec3 normal, vec3 viewspacePos, vec2 uv)
+vec3 perturbNormal(vec3 normal, vec3 viewspacePos, int materialIndex, vec2 uv)
 {
 	vec3 map = texture(sampler2D(materials[materialIndex].normalTex), uv).rgb;
 	map = map * 2.0f - 1.0f;
@@ -71,6 +86,8 @@ vec3 perturbNormal(vec3 normal, vec3 viewspacePos, vec2 uv)
 
 void main()
 {
+	int materialIndex = clusters[fsIn.clusterId].materialIndex;
+
 	if (materials[materialIndex].hasColorTex)
 	{
 		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * (materials[materialIndex].colorFactor);
@@ -91,11 +108,10 @@ void main()
 	outNorm = vec4(normalize(fsIn.norm), 0.0f);
 	if (materials[materialIndex].hasNormalTex)
 	{
-		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, fsIn.uv), 1.0f);
+		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv), 1.0f);
 	}
 
-	// Todo: remove
-	outPos = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+	// Todo: remove outPos
 
 	//outColor = vec4(meshletCol, 1.0f);
 }

@@ -25,6 +25,9 @@
     <Filter Include="Source Files\Camera">
       <UniqueIdentifier>{d8289090-388b-4175-a9cc-7cc020966c41}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Scene">
+      <UniqueIdentifier>{a0b92ba0-aa6b-48f0-9b2f-94751baa2013}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -74,6 +77,9 @@
     </ClCompile>
     <ClCompile Include="third_party\meshoptimizer\clusterizer.cpp">
       <Filter>Source Files\Third Party</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scene\scene.cpp">
+      <Filter>Source Files\Scene</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -347,6 +353,9 @@
     <ClInclude Include="src\camera\camera.hpp">
       <Filter>Source Files\Camera</Filter>
     </ClInclude>
+    <ClInclude Include="src\scene\scene.hpp">
+      <Filter>Source Files\Scene</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\uber.frag">
@@ -365,6 +374,9 @@
       <Filter>Source Files\Shaders</Filter>
     </None>
     <None Include="src\shaders\lighting.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="src\shaders\triangle_cull.comp">
       <Filter>Source Files\Shaders</Filter>
     </None>
   </ItemGroup>

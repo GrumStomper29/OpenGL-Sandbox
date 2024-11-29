@@ -2,7 +2,6 @@
 
 layout (binding = 0) uniform sampler2D inColor;
 layout (binding = 1) uniform sampler2D inNorm;
-layout (binding = 2) uniform sampler2D inPos;
 
 layout (location = 0) out vec4 outColor;
 

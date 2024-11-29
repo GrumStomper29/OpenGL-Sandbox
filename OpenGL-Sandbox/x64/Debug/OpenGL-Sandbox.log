@@ -1,0 +1,21 @@
+﻿  main.cpp
+C:\dev\OpenGL-Sandbox\src\main.cpp(554,63): warning C4244: 'argument': conversion from 'double' to 'GLuint', possible loss of data
+C:\dev\OpenGL-Sandbox\src\main.cpp(554,14): warning C4244: 'argument': conversion from 'double' to 'GLuint', possible loss of data
+C:\dev\OpenGL-Sandbox\src\main.cpp(553,31): warning C4244: 'argument': conversion from 'double' to 'GLuint', possible loss of data
+  scene.cpp
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(38,55): warning C4267: '+=': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(39,63): warning C4267: '+=': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(40,53): warning C4267: '+=': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(41,52): warning C4267: '+=': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(42,50): warning C4267: '+=': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(92,42): warning C4267: '+=': conversion from 'size_t' to 'int', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(93,50): warning C4267: '+=': conversion from 'size_t' to 'int', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(94,40): warning C4267: '+=': conversion from 'size_t' to 'int', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(95,39): warning C4267: '+=': conversion from 'size_t' to 'int', possible loss of data
+C:\dev\OpenGL-Sandbox\src\scene\scene.cpp(96,37): warning C4267: '+=': conversion from 'size_t' to 'int', possible loss of data
+  Generating Code...
+C:\dev\OpenGL-Sandbox\src\main.cpp(44,1): warning C4715: '`message_callback'::`2'::<lambda_1>::operator()': not all control paths return a value
+C:\dev\OpenGL-Sandbox\src\main.cpp(57,1): warning C4715: '`message_callback'::`2'::<lambda_2>::operator()': not all control paths return a value
+C:\dev\OpenGL-Sandbox\src\main.cpp(66,1): warning C4715: '`message_callback'::`2'::<lambda_3>::operator()': not all control paths return a value
+  OpenGL-Sandbox.vcxproj -> C:\dev\OpenGL-Sandbox\x64\Debug\OpenGL-Sandbox.exe
+          1 file(s) copied.

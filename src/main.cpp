@@ -1,17 +1,12 @@
 #include "camera/camera.hpp"
 #include "model/model.hpp"
+#include "scene/scene.hpp"
 
 #define SDL_MAIN_HANDLED
 #include "SDL/SDL.h"
 
 #include "glad/glad.h"
 
-#include <cstdint>
-#include <chrono>
-#include <iostream>
-#include <unordered_map>
-
-// temp
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
@@ -20,69 +15,19 @@
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/imgui_impl_sdl2.h"
 
-// for compileShader()
+#include "meshoptimizer/meshoptimizer.h"
+
+#include <cmath> // for cbrt and ceil
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <unordered_map>
 #include <string>
 #include <fstream>
 #include <sstream>
 
-#include <unordered_map>
 
-#include "meshoptimizer/meshoptimizer.h"
-
-GLuint compileShader(const std::string& filename, GLenum type)
-{
-	std::ifstream inputStream{ filename };
-
-	std::stringstream stringStream{};
-	stringStream << inputStream.rdbuf();
-
-	std::string srcStr{ stringStream.str() };
-	const char* srcCStr{ srcStr.c_str() };
-
-	GLuint shader{ glCreateShader(type) };
-	glShaderSource(shader, 1, &srcCStr, nullptr);
-	glCompileShader(shader);
-
-	GLint success{};
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		GLchar infoLog[1024]{};
-		glGetShaderInfoLog(shader, 1024, nullptr, infoLog);
-		std::cerr << infoLog << '\n';
-	}
-
-	return shader;
-}
-
-struct ShaderProgram
-{
-	std::string vsPath{};
-	std::string fsPath{};
-	GLuint program{};
-};
-
-void linkShaderProgram(ShaderProgram& shaderProgram)
-{
-	auto vertexShader{ compileShader(shaderProgram.vsPath, GL_VERTEX_SHADER) };
-	auto fragmentShader{ compileShader(shaderProgram.fsPath, GL_FRAGMENT_SHADER) };
-
-	shaderProgram.program = glCreateProgram();
-	glAttachShader(shaderProgram.program, vertexShader);
-	glAttachShader(shaderProgram.program, fragmentShader);
-	glLinkProgram(shaderProgram.program);
-
-	GLint success{};
-	glGetProgramiv(shaderProgram.program, GL_LINK_STATUS, &success);
-	if (!success) {
-		GLchar infoLog[512]{};
-		glGetProgramInfoLog(shaderProgram.program, 512, nullptr, infoLog);
-		std::cerr << infoLog << '\n';
-	}
-
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
-}
 
 void message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const* message, void const* user_param)
 {
@@ -120,24 +65,14 @@ void message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GL
 				}
 				}();
 				std::cout << src_str << ", " << type_str << ", " << severity_str << ", " << id << ": " << message << '\n';
-}
+}         
 
 struct Stats
 {
 	float frameTime{};
-	int triangleCount{};
-	int drawcallCount{};
 };
 
-// todo: destruct
-struct Scene
-{
-	GLuint materialsSsbo{};
 
-	GLuint vbo{};
-	GLuint ibo{};
-	GLuint vao{};
-};
 
 int main()
 {
@@ -186,65 +121,27 @@ int main()
 	ImGui_ImplSDL2_InitForOpenGL(window, glContext);
 	ImGui_ImplOpenGL3_Init();
 
-	Scene scene{};
 
-	ModelObject model{ "assets/Bistro1.glb", 0, 0 };
-	//ModelObject model{ "assets/Sponza/NewSponza_Main_glTF_002.gltf", "assets/Sponza" };
-	//ModelObject model{ "assets/house.glb" };
-	//ModelObject model{ "assets/deccer2.glb" };
 
-	ModelObject model1{ "assets/cubes.glb", static_cast<int>(model.mVertices.size()), 
-		static_cast<int>(model.mIndices.size()) };
-	//ModelObject model1{ "assets/cubes.glb" };
+	SceneObject sceneObject{};
+	std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
+	{
+		{ .name{"bistro"}, .path{ "assets/Bistro1.glb" } },
+		{ .name{"cubes"}, .path{ "assets/cubes.glb" } },
+	};
+	sceneObject.loadModels(modelLoadInfos);
+	sceneObject.initGlMemory();
 
-	GLsizei materialCount{ static_cast<GLsizei>(model.mMaterials.size() + model1.mMaterials.size()) };
-	// collecting them on cpu and making 1 pass: faster
-	// making multiple passes and collecting on gpu: more flexible, nicer code, not slower than original approach
+	sceneObject.mShaderPrograms["uber"] = { "src/shaders/uber.vert", "src/shaders/uber.frag" };
+	sceneObject.mShaderPrograms["transparent"] = { "src/shaders/uber.vert", "src/shaders/transparent.frag" };
+	sceneObject.mShaderPrograms["comp"] = { "src/shaders/comp.vert", "src/shaders/comp.frag" };
+	sceneObject.mShaderPrograms["lighting"] = { "src/shaders/comp.vert", "src/shaders/lighting.frag" };
+	sceneObject.mShaderPrograms["culling"] = { .computePath{ "src/shaders/triangle_cull.comp" } };
+	sceneObject.linkShaderPrograms();
 
-	glCreateBuffers(1, &scene.materialsSsbo);
-	glNamedBufferData(scene.materialsSsbo, materialCount * sizeof(ModelObject::MaterialUbo), nullptr, GL_STATIC_DRAW);
-	
-	glNamedBufferSubData(scene.materialsSsbo, 0, model.mMaterials.size() * sizeof(ModelObject::MaterialUbo), model.mMaterialBuffers.data());
-	glNamedBufferSubData(scene.materialsSsbo, model.mMaterials.size() * sizeof(ModelObject::MaterialUbo),
-		model1.mMaterials.size() * sizeof(ModelObject::MaterialUbo), model1.mMaterialBuffers.data());
+	Camera camera({ 0.0f, 0.0f, -10.0f }, { 0.0f, 180.0f });
 
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, scene.materialsSsbo);
 
-	
-	GLsizei vertexCount{ static_cast<GLsizei>(model.mVertices.size() + model1.mVertices.size()) };
-	GLsizei indexCount{ static_cast<GLsizei>(model.mIndices.size() + model1.mIndices.size()) };
-
-	glCreateBuffers(1, &scene.vbo);
-	glNamedBufferStorage(scene.vbo, sizeof(ModelObject::Vertex) * vertexCount, nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-	glNamedBufferSubData(scene.vbo, 0, sizeof(ModelObject::Vertex) * model.mVertices.size(), model.mVertices.data());
-	glNamedBufferSubData(scene.vbo, sizeof(ModelObject::Vertex) * model.mVertices.size(), 
-		sizeof(ModelObject::Vertex) * model1.mVertices.size(), model1.mVertices.data());
-
-	glCreateBuffers(1, &scene.ibo);
-	glNamedBufferStorage(scene.ibo, sizeof(std::uint32_t) * indexCount, nullptr, GL_DYNAMIC_STORAGE_BIT); // todo: use 8 bit indices
-
-	glNamedBufferSubData(scene.ibo, 0, sizeof(std::uint32_t) * model.mIndices.size(), model.mIndices.data());
-	glNamedBufferSubData(scene.ibo, sizeof(std::uint32_t) * model.mIndices.size(), 
-		sizeof(std::uint32_t) * model1.mIndices.size(), model1.mIndices.data());
-
-	glCreateVertexArrays(1, &scene.vao);
-
-	glVertexArrayVertexBuffer(scene.vao, 0, scene.vbo, 0, sizeof(ModelObject::Vertex));
-	glVertexArrayElementBuffer(scene.vao, scene.ibo);
-
-	glEnableVertexArrayAttrib(scene.vao, 0);
-	glEnableVertexArrayAttrib(scene.vao, 1);
-	glEnableVertexArrayAttrib(scene.vao, 2);
-
-	glVertexArrayAttribFormat(scene.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
-	glVertexArrayAttribFormat(scene.vao, 1, 3, GL_FLOAT, GL_FALSE, offsetof(ModelObject::Vertex, normal));
-	glVertexArrayAttribFormat(scene.vao, 2, 2, GL_FLOAT, GL_FALSE, offsetof(ModelObject::Vertex, uv));
-
-	glVertexArrayAttribBinding(scene.vao, 0, 0);
-	glVertexArrayAttribBinding(scene.vao, 1, 0);
-	glVertexArrayAttribBinding(scene.vao, 2, 0);
-	
 
 	float screenQuadVerts[] = {
 		// Position				// UV
@@ -274,18 +171,6 @@ int main()
 	glVertexArrayAttribBinding(screenQuadVAO, 0, 0);
 	glVertexArrayAttribBinding(screenQuadVAO, 1, 0);
 
-	std::unordered_map<std::string, ShaderProgram> shaderPrograms;
-
-	shaderPrograms["uber"] = { "src/shaders/uber.vert", "src/shaders/uber.frag" };
-	shaderPrograms["transparent"] = { "src/shaders/uber.vert", "src/shaders/transparent.frag" };
-	shaderPrograms["comp"] = { "src/shaders/comp.vert", "src/shaders/comp.frag" };
-	shaderPrograms["lighting"] = { "src/shaders/comp.vert", "src/shaders/lighting.frag" };
-
-	for (auto& [name, shaderProgram] : shaderPrograms)
-	{
-		linkShaderProgram(shaderProgram);
-	}
-
 	GLuint opaqueFBO{};
 	glCreateFramebuffers(1, &opaqueFBO);
 
@@ -295,16 +180,12 @@ int main()
 	GLuint normalTexture{};
 	glCreateTextures(GL_TEXTURE_2D, 1, &normalTexture);
 	glTextureStorage2D(normalTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats
-	GLuint positionTexture{};
-	glCreateTextures(GL_TEXTURE_2D, 1, &positionTexture);
-	glTextureStorage2D(positionTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: storing positions is worse than just calculating them
 	GLuint depthTexture{};
 	glCreateTextures(GL_TEXTURE_2D, 1, &depthTexture);
 	glTextureStorage2D(depthTexture, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
 
 	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture,   0);
 	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,   0);
-	glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT2, positionTexture, 0); // todo: redundant
 	glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,    0);
 
 	GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
@@ -327,29 +208,11 @@ int main()
 	GLenum drawBuffers[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
 	glNamedFramebufferDrawBuffers(transparentFBO, 2, drawBuffers);
 
-	/*
-	GLuint gBuffer{};
-	glCreateFramebuffers(1, &gBuffer);
-
-	GLuint gColor{};
-	glCreateTextures(GL_TEXTURE_2D, 1, &gColor);
-	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight);
-	GLuint gNormal{};
-	glCreateTextures(GL_TEXTURE_2D, 1, &gNormal);
-	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats
-	GLuint gPosition{};
-	glCreateTextures(GL_TEXTURE_2D, 1, &gPosition);
-	glTextureStorage2D(gColor, 1, GL_RGBA16F, screenWidth, screenHeight);
-	*/
-
-	//if (glCheckNamedFramebufferStatus(transparentFBO, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-	//	std::cerr << "framebuffer error\n";
-
-	Camera camera({ 0.0f, 0.0f, -10.0f }, { 0.0f, 180.0f });
-
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+
 
 	double lastTime{ SDL_GetTicks64() * 0.001 };
 
@@ -431,6 +294,7 @@ int main()
 
 		glm::mat4 view{ camera.getViewMatrix() };
 		auto p{ glm::perspective(camera.mFov, 16.0f / 9.0f, 0.25f, 10000.0f) };
+		auto s{ glm::scale(glm::mat4{1.0f}, glm::vec3{ 10.0f }) };
 		auto tp{ p * view };
 
 		ImGui_ImplOpenGL3_NewFrame();
@@ -439,15 +303,13 @@ int main()
 
 		ImGui::Begin("Stats");
 		ImGui::Text("frametime %f ms", stats.frameTime);
-		ImGui::Text("triangles %i", stats.triangleCount);
-		ImGui::Text("draws %i", stats.drawcallCount);
-		ImGui::InputText("shader program:", selectedProgram, 512);
+		ImGui::InputText(":shader program", selectedProgram, 512);
 		if (ImGui::Button("hot reload"))
 		{
-			if (auto found{ shaderPrograms.find(std::string{ selectedProgram }) }; found != shaderPrograms.end())
+			if (auto found{ sceneObject.mShaderPrograms.find(std::string{ selectedProgram }) }; found != sceneObject.mShaderPrograms.end())
 			{
 				glDeleteProgram(found->second.program);
-				linkShaderProgram(found->second);
+				SceneObject::linkShaderProgram(found->second);
 			}
 			else
 			{
@@ -456,12 +318,35 @@ int main()
 		}
 		ImGui::End();
 
-		stats.triangleCount = 0;
-		stats.drawcallCount = 0;
-		
-		glBindVertexArray(scene.vao);
-
 		{
+			SceneObject::IndirectDraw indirectDraw{};
+			void* map{ glMapNamedBuffer(sceneObject.mIndirectDrawBuffer, GL_WRITE_ONLY) };
+			std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
+			glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffer);
+
+			map = glMapNamedBuffer(sceneObject.mIndirectBlendDrawBuffer, GL_WRITE_ONLY);
+			std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
+			glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffer);
+
+			glUseProgram(sceneObject.mShaderPrograms.at("culling").program);
+
+			auto loc{ glGetUniformLocation(sceneObject.mShaderPrograms.at("culling").program, "clusterCount") };
+			glUniform1ui(loc, sceneObject.mClusterCount);
+
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffer);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIndirectBlendDrawBuffer);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mWriteBlendIbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
+
+			glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)), 
+				std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount)));
+
+			glBindVertexArray(sceneObject.mVao);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
+
 			glEnable(GL_DEPTH_TEST);
 			glDepthFunc(GL_LESS);
 			glDepthMask(GL_TRUE);
@@ -471,22 +356,23 @@ int main()
 			glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			glUseProgram(shaderPrograms.at("uber").program);
-			auto loc{ glGetUniformLocation(shaderPrograms.at("uber").program, "transform") };
+			glUseProgram(sceneObject.mShaderPrograms.at("uber").program);
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "transform") };
 			glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
-			loc = { glGetUniformLocation(shaderPrograms.at("uber").program, "view") };
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "view") };
 			glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
-			loc = { glGetUniformLocation(shaderPrograms.at("uber").program, "camPos") };
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "camPos") };
 			glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
 
-			model.draw(glm::translate(glm::mat4{ 1.0f }, { 0.0f, 0.0f, 0.0f }), 
-				shaderPrograms.at("uber").program, 
-				static_cast<ModelObject::AlphaMode>(ModelObject::OPAQUE | ModelObject::MASK),
-				0, stats.triangleCount, stats.drawcallCount);
-			model1.draw(glm::translate(glm::mat4{ 1.0f }, { 0.0f, 0.0f, 0.0f }),
-				shaderPrograms.at("uber").program,
-				static_cast<ModelObject::AlphaMode>(ModelObject::OPAQUE | ModelObject::MASK),
-				model.mMaterials.size(), stats.triangleCount, stats.drawcallCount);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
+			glBindVertexArray(sceneObject.mVao);
+			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffer);
+			glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
 			glDepthMask(GL_FALSE);
 			glEnable(GL_BLEND);
@@ -500,54 +386,50 @@ int main()
 			glClearNamedFramebufferfv(transparentFBO, GL_COLOR, 0, color0);
 			glClearNamedFramebufferfv(transparentFBO, GL_COLOR, 1, color1);
 
-			glUseProgram(shaderPrograms.at("transparent").program);
-			loc = { glGetUniformLocation(shaderPrograms.at("transparent").program, "transform") };
+			glUseProgram(sceneObject.mShaderPrograms.at("transparent").program);
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("transparent").program, "transform") };
 			glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
-			loc = { glGetUniformLocation(shaderPrograms.at("transparent").program, "view") };
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("transparent").program, "view") };
 			glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
-			loc = { glGetUniformLocation(shaderPrograms.at("transparent").program, "camPos") };
+			loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("transparent").program, "camPos") };
 			glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
-			
-			model.draw({ 1.0f }, shaderPrograms.at("transparent").program, ModelObject::BLEND,
-				0, stats.triangleCount, stats.drawcallCount);
-			model1.draw({ 1.0f }, shaderPrograms.at("transparent").program, ModelObject::BLEND,
-				model.mMaterials.size(), stats.triangleCount, stats.drawcallCount);
+
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteBlendIbo);
+			glBindVertexArray(sceneObject.mBlendVao);
+			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffer);
+			glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
 			glDepthFunc(GL_ALWAYS);
 			glDisable(GL_BLEND);
 
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-			glUseProgram(shaderPrograms.at("lighting").program);
+			glUseProgram(sceneObject.mShaderPrograms.at("lighting").program);
 
 			glBindTextureUnit(0, opaqueTexture);
 			glBindTextureUnit(1, normalTexture);
-			glBindTextureUnit(2, positionTexture);
 
 			glBindVertexArray(screenQuadVAO);
 
 			glDrawArrays(GL_TRIANGLES, 0, 6);
 			
-			// comp pass
 			glEnable(GL_BLEND);
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-			glUseProgram(shaderPrograms.at("comp").program);
+			glUseProgram(sceneObject.mShaderPrograms.at("comp").program);
 
 			glBindTextureUnit(0, accumTexture);
 			glBindTextureUnit(1, revealTexture);
-			//glBindTextureUnit(2, opaqueTexture);
-			//glBindTextureUnit(3, normalTexture);
-			//glBindTextureUnit(4, positionTexture);
 
 			glBindVertexArray(screenQuadVAO);
 
 			glDrawArrays(GL_TRIANGLES, 0, 6);
 		}
-
-		//glBlitNamedFramebuffer(opaqueFBO, 0, 0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -557,17 +439,6 @@ int main()
 		auto end{ std::chrono::system_clock::now() };
 		auto elapsed{ std::chrono::duration_cast<std::chrono::microseconds>(end - start) };
 		stats.frameTime = elapsed.count() / 1000.0f;
-	}
-
-	glDeleteVertexArrays(1, &scene.vao);
-	glDeleteBuffers(1, &scene.vbo);
-	glDeleteBuffers(1, &scene.ibo);
-
-	glDeleteBuffers(1, &scene.materialsSsbo);
-
-	for (auto& [name, shaderProgram] : shaderPrograms)
-	{
-		glDeleteProgram(shaderProgram.program);
 	}
 
 	glDeleteFramebuffers(1, &opaqueFBO);

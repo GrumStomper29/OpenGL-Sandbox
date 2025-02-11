@@ -67,13 +67,13 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
-    <IncludePath>C:\dev\OpenGL-Sandbox\third_party;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\OpenGL-Sandbox\third_party;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)third_party;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)third_party;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\dev\OpenGL-Sandbox\third_party;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\OpenGL-Sandbox\third_party;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)third_party;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)third_party;$(LibraryPath)</LibraryPath>
     <OutDir>$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
@@ -81,13 +81,13 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
-    <IncludePath>C:\dev\OpenGL-Sandbox\third_party;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\OpenGL-Sandbox\third_party;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)third_party;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)third_party;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\dev\OpenGL-Sandbox\third_party;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\OpenGL-Sandbox\third_party;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)third_party;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)third_party;$(LibraryPath)</LibraryPath>
     <OutDir>$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>

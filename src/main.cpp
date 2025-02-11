@@ -209,8 +209,8 @@ int main()
     glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,   0);
     glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,    0);
 
-    GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-    glNamedFramebufferDrawBuffers(opaqueFBO, 3, drawBuffersG);
+    GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glNamedFramebufferDrawBuffers(opaqueFBO, 2, drawBuffersG);
 
     GLuint transparentFBO{};
     glCreateFramebuffers(1, &transparentFBO);
@@ -233,8 +233,6 @@ int main()
     glCreateTextures(GL_TEXTURE_2D, 1, &hiZTexture);
     glTextureStorage2D(hiZTexture, std::floor(std::log2(std::max(screenWidth, screenHeight))) + 1, GL_R32F, screenWidth, screenHeight);
 
-
-
     GLuint shadowFBO{};
     glCreateFramebuffers(1, &shadowFBO);
 
@@ -243,6 +241,8 @@ int main()
     glTextureStorage2D(shadowMap, 1, GL_DEPTH_COMPONENT32F, 1024, 1024);
 
     glNamedFramebufferTexture(shadowFBO, GL_DEPTH_ATTACHMENT, shadowMap, 0);
+
+    //glNamedFramebufferDrawBuffer(shadowFBO, GL_DEPTH_ATTACHMENT);
 
     double lastTime{ SDL_GetTicks64() * 0.001 };
 

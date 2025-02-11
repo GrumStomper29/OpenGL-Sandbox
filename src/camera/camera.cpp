@@ -10,7 +10,7 @@
 
 void Camera::move(const glm::vec3& displacement)
 {
-	mPos += getRotationMatrix() * glm::vec4{ displacement, 0.0f };
+	mPos += glm::vec3{ getRotationMatrix() * glm::vec4{ displacement, 0.0f } };
 }
 
 Camera::Frustum Camera::getViewFrustum(const glm::mat4& proj)

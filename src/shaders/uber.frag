@@ -58,9 +58,6 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 
 uniform vec3 meshletCol;
 
-//uniform int materialIndex;
-
-
 out vec4 outColor;
 out vec4 outNorm;
 
@@ -116,8 +113,4 @@ void main()
 	{
 		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv), 1.0f);
 	}
-
-	// Todo: remove outPos
-
-	//outColor = vec4(meshletCol, 1.0f);
 }

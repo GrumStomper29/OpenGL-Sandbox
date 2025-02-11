@@ -1,0 +1,296 @@
+#version 430 core
+
+uniform uint clusterCount;
+
+uniform mat4 projectionMatrix;
+uniform float zNear;
+
+uniform mat4 viewMatrix;
+
+uniform sampler2D hiZ;
+
+layout(binding = 0, std430) readonly buffer IndexBuffer
+{
+	uint indices[];
+};
+
+layout (binding = 1, std430) buffer IndirectDrawBuffer
+{
+	uint count;
+	uint instanceCount;
+	uint firstIndex;
+	int baseVertex;
+	uint baseInstance;
+} indirectDraw;
+
+struct Cluster
+{
+	vec4 boundingSphere;
+
+	uint transformIndex;
+	int materialIndex;
+
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+
+	int padding0;
+	int padding1;
+	int padding2;
+};
+layout (binding = 2, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
+
+layout (binding = 3, std430) buffer IndexWriteBuffer
+{
+	uint writeIndices[];
+};
+
+
+layout (binding = 4, std430) buffer IndirectBlendDrawBuffer
+{
+	uint count;
+	uint instanceCount;
+	uint firstIndex;
+	int baseVertex;
+	uint baseInstance;
+} indirectBlendDraw;
+
+layout (binding = 5, std430) buffer BlendIndexWriteBuffer
+{
+	uint writeBlendIndices[];
+};
+
+struct Material
+{
+	vec4 colorFactor;
+
+	uvec2 baseColorTex;
+	uvec2 metallicRoughnessTex;
+	uvec2 normalTex;
+
+	float metallicFactor;
+	float roughnessFactor;
+
+	bool hasColorTex;
+	bool hasMetallicRoughnessTex;
+	bool hasNormalTex;
+
+	bool alphaMask;
+	float alphaCutoff;
+	bool alphaBlend;
+
+	uvec2 padding;
+};
+layout (binding = 6, std430) readonly buffer MaterialBlock
+{
+	Material materials[];
+};
+
+layout (binding = 7, std430) readonly buffer ViewFrustum
+{
+	vec4 top;
+	vec4 bottom;
+
+	vec4 right;
+	vec4 left;
+
+	vec4 far; // unused
+	vec4 near;
+} viewFrustum;
+
+layout(binding = 8, std430) readonly buffer TransformBuffer
+{
+	mat4 transforms[];
+};
+
+layout (binding = 9, std430) buffer VisibilityBitmask
+{
+	uint visibilityBitmask[];
+};
+
+
+
+vec4 transformSphere(vec4 sphere, mat4 transform)
+{
+	vec3 scale;
+	scale.x = length(vec3(transform[0]));
+	scale.y = length(vec3(transform[1]));
+	scale.z = length(vec3(transform[2]));
+
+	vec3 center = vec3(transform * vec4(sphere.xyz, 1.0f));
+
+	float maxScale = max(scale.x, max(scale.y, scale.z));
+
+	center = vec3(viewMatrix * vec4(center, 1.0f));
+
+	vec4 globalSphere = vec4(center, sphere.w * maxScale);
+
+	return globalSphere;
+}
+
+
+
+float getSignedDistanceToPlane(vec4 plane, vec3 point)
+{
+	return dot(plane.xyz, point) + plane.w;
+}
+
+bool sphereIsOnOrForwardPlane(vec4 sphere, vec4 plane)
+{
+	return getSignedDistanceToPlane(plane, sphere.xyz) > -sphere.w;
+}
+
+bool sphereIsOnViewFrustum(vec4 sphere, mat4 transform)
+{
+	vec3 scale;
+	scale.x = length(vec3(transform[0]));
+	scale.y = length(vec3(transform[1]));
+	scale.z = length(vec3(transform[2]));
+
+	vec3 center = vec3(transform * vec4(sphere.xyz, 1.0f));
+
+	float maxScale = max(scale.x, max(scale.y, scale.z));
+
+	vec4 globalSphere = vec4(center, sphere.w * maxScale);
+
+	return ((sphereIsOnOrForwardPlane(globalSphere, viewFrustum.left)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.right)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.near)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.top)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.bottom)));
+}
+
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+bool projectSphereView(vec3 c, float r, float znear, float P00, float P11, out vec4 aabb)
+{
+    if (c.z < r + znear) return false;
+
+    vec3 cr = c * r;
+    float czr2 = c.z * c.z - r * r;
+
+    float vx = sqrt(c.x * c.x + czr2);
+    float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+    float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+    float vy = sqrt(c.y * c.y + czr2);
+    float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+    float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+    aabb = vec4(minx * P00, miny * P11, maxx * P00, maxy * P11);
+    // clip space -> uv space
+    aabb = aabb.xwzy * vec4(0.5f) + vec4(0.5f);
+
+    return true;
+}
+
+float sampleHiZ(ivec2 coords, int level)
+{
+	if (coords.x < 0 || coords.y < 0) coords = ivec2(0, 0);
+
+	if (coords.x >= textureSize(hiZ, level).x) coords.x = textureSize(hiZ, level).x -1;
+	if (coords.y >= textureSize(hiZ, level).y) coords.y = textureSize(hiZ, level).y -1;
+
+	return texelFetch(hiZ, coords, level).x;
+}
+
+
+// per cluster
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	uint clusterId = 
+		gl_WorkGroupID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
+		gl_WorkGroupID.y * gl_NumWorkGroups.x +
+		gl_WorkGroupID.x;
+
+	if (clusterId >= clusterCount)
+	{
+		return;
+	}
+
+	uint i = clusterId / 32;
+	uint n = clusterId - i * 32;
+	uint bits = 1 << n;
+	bool clusterWasVisible = bool(visibilityBitmask[i] & bits);
+
+
+	bool isVisible = sphereIsOnViewFrustum(clusters[clusterId].boundingSphere, transforms[clusters[clusterId].transformIndex]);
+
+	if (isVisible)
+	{
+		vec4 sphere = transformSphere(clusters[clusterId].boundingSphere, transforms[clusters[clusterId].transformIndex]);
+
+		vec4 aabb;
+		if (projectSphereView(sphere.xyz * vec3(1.0f, 1.0f, -1.0f), sphere.w,
+			zNear, projectionMatrix[0][0], projectionMatrix[1][1], aabb))
+		{
+			// aabb.xy is bottom left; aabb.zw is top right
+			float width = (aabb.z - aabb.x) * textureSize(hiZ, 0).x;
+			float height = (aabb.w - aabb.y) * textureSize(hiZ, 0).y;
+
+			int level = int(ceil(log2(max(width, height)))) + 1;
+			level = min(level, textureQueryLevels(hiZ) - 1);
+			level = max(0, level);
+
+			vec2 coords = floor(((aabb.xy + aabb.zw) * 0.5f) * vec2(textureSize(hiZ, level)));
+
+			vec2 coords1 = ((aabb.xy + aabb.zw) * 0.5f) * vec2(textureSize(hiZ, level));
+			coords1 = ceil(coords1);
+
+			vec4 depths;
+			depths.x = sampleHiZ(ivec2(coords), level);
+			depths.y = sampleHiZ(ivec2(coords.x, coords1.y), level);
+			depths.z = sampleHiZ(ivec2(coords1), level);
+			depths.w = sampleHiZ(ivec2(coords1.x, coords.y), level);
+			float depth = min(min(depths.x, depths.y), min(depths.z, depths.w));
+
+			float sphereDepth = -abs(sphere.z) + abs(sphere.w);
+			sphereDepth = zNear / -sphereDepth;
+
+			isVisible = sphereDepth >= depth;
+		}
+	}
+
+	if (isVisible)
+	{
+		atomicOr(visibilityBitmask[i], bits);
+	}
+	else
+	{
+		bits = ~bits;
+		atomicAnd(visibilityBitmask[i], bits);
+
+		return;
+	}
+
+
+	// If cluster wasn't visible last frame, or cluster is alpha blend, batch it here
+	if (materials[clusters[clusterId].materialIndex].alphaBlend)
+	{
+		uint bufferStart = atomicAdd(indirectBlendDraw.count, clusters[clusterId].indexCount);
+
+		for (int i = 0; i < clusters[clusterId].indexCount; i++)
+		{
+			// 25 bits for cluster id, 7 bits for index
+			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+			writeBlendIndices[bufferStart + i] = index;
+		}
+	}
+	else
+	{
+		if (!clusterWasVisible)
+		{
+			uint bufferStart = atomicAdd(indirectDraw.count, clusters[clusterId].indexCount);
+
+			for (int i = 0; i < clusters[clusterId].indexCount; i++)
+			{
+				// 25 bits for cluster id, 7 bits for index
+				uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+				writeIndices[bufferStart + i] = index;
+			}
+		}
+	}
+}

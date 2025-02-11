@@ -16,7 +16,7 @@ public:
 	{
 		std::string name{};
 		std::filesystem::path path{};
-		std::filesystem::path directory{ "assets" };//what is this?
+		std::filesystem::path directory{ "../../assets" }; // It MIGHT be a bad idea to hardcode this. 
 	};
 
 	struct ShaderProgram
@@ -72,6 +72,10 @@ public:
 	GLuint mWriteBlendIbo{};
 	GLuint mIndirectBlendDrawBuffer{};
 
+	GLuint mViewFrustumSsbo{};
+
+	GLuint mVisibilityBitmaskSsbo{};
+
 	GLsizei mMaterialCount{ 0 };
 	GLsizei mTransformCount{ 0 };
 	GLsizei mClusterCount{ 0 };
@@ -82,6 +86,5 @@ public:
 	std::unordered_map<std::string, ShaderProgram> mShaderPrograms{};
 
 private:
-
 
 };

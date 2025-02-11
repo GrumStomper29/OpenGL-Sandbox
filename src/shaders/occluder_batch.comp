@@ -1,0 +1,111 @@
+#version 430 core
+
+uniform uint clusterCount;
+
+layout(binding = 0, std430) readonly buffer IndexBuffer
+{
+	uint indices[];
+};
+
+layout (binding = 1, std430) buffer IndirectDrawBuffer
+{
+	uint count;
+	uint instanceCount;
+	uint firstIndex;
+	int baseVertex;
+	uint baseInstance;
+} indirectDraw;
+
+struct Cluster
+{
+	vec4 boundingSphere;
+
+	uint transformIndex;
+	int materialIndex;
+
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+
+	int padding0;
+	int padding1;
+	int padding2;
+};
+layout (binding = 2, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
+
+layout (binding = 3, std430) buffer IndexWriteBuffer
+{
+	uint writeIndices[];
+};
+
+struct Material
+{
+	vec4 colorFactor;
+
+	uvec2 baseColorTex;
+	uvec2 metallicRoughnessTex;
+	uvec2 normalTex;
+
+	float metallicFactor;
+	float roughnessFactor;
+
+	bool hasColorTex;
+	bool hasMetallicRoughnessTex;
+	bool hasNormalTex;
+
+	bool alphaMask;
+	float alphaCutoff;
+	bool alphaBlend;
+
+	uvec2 padding;
+};
+layout (binding = 6, std430) readonly buffer MaterialBlock
+{
+	Material materials[];
+};
+
+layout (binding = 9, std430) buffer VisibilityBitmask
+{
+	uint visibilityBitmask[];
+};
+
+
+
+// per cluster (clusters are meshlet instances)
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
+void main()
+{
+	uint clusterId = 
+		(gl_WorkGroupID.z * 64u + gl_LocalInvocationID.z) * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
+		gl_WorkGroupID.y * gl_NumWorkGroups.x +
+		gl_WorkGroupID.x;
+
+	bool activeThread = clusterId < clusterCount;
+
+	clusterId *= uint(activeThread);
+
+	// test clusters against visibility bitmask. If they weren't visible last frame, they aren't occluders, and won't be batched.
+	uint i = clusterId / 32;
+	uint n = clusterId - i * 32;
+	uint bits = 1 << n;
+	bool clusterWasVisible = bool(visibilityBitmask[i] & bits);
+
+	activeThread = activeThread && clusterWasVisible && !materials[clusters[clusterId].materialIndex].alphaBlend;
+
+	if (activeThread)
+	{
+		uint indexCount = clusters[clusterId].indexCount;
+		uint bufferStart = atomicAdd(indirectDraw.count, indexCount);
+
+		for (int i = 0; i < indexCount; i++)
+		{
+			// 25 bits for cluster id, 7 bits for index.
+			// I should theoretically only need 6 for the index, but it wouldn't work otherwise. Oh well :)
+			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+			writeIndices[bufferStart + i] = index;
+		}
+	}
+}

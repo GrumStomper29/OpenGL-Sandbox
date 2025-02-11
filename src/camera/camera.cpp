@@ -2,6 +2,7 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include "glm/glm.hpp"
+#include "glm/gtc/matrix_access.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtx/quaternion.hpp"
 
@@ -10,6 +11,34 @@
 void Camera::move(const glm::vec3& displacement)
 {
 	mPos += getRotationMatrix() * glm::vec4{ displacement, 0.0f };
+}
+
+Camera::Frustum Camera::getViewFrustum(const glm::mat4& proj)
+{
+	glm::mat4 mat{ proj * getViewMatrix() };
+
+	Frustum frustum{};
+
+	frustum.left   = glm::row(mat, 3) + glm::row(mat, 0);
+	frustum.right  = glm::row(mat, 3) - glm::row(mat, 0);
+	frustum.bottom = glm::row(mat, 3) + glm::row(mat, 1);
+	frustum.top    = glm::row(mat, 3) - glm::row(mat, 1);
+	frustum.near   = glm::row(mat, 3) + glm::row(mat, 2);
+	frustum.far    = glm::row(mat, 3) - glm::row(mat, 2);
+
+	auto normalizePlane{ [](glm::vec4& p) {
+			float mag{ std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z) };
+			p /= mag;
+		} };
+
+	normalizePlane(frustum.left);
+	normalizePlane(frustum.right);
+	normalizePlane(frustum.bottom);
+	normalizePlane(frustum.top);
+	normalizePlane(frustum.near);
+	normalizePlane(frustum.far);
+
+	return frustum;
 }
 
 glm::mat4 Camera::getViewMatrix()

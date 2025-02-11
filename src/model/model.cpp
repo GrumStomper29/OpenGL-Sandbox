@@ -151,6 +151,8 @@ void ModelObject::buildPrimitiveUniformsFromNodeAndChildren(const Node& node, co
 			{
 				Cluster newCluster{};
 
+				newCluster.boundingSphere = cluster.boundingSphere;
+
 				newCluster.transformIndex = (mGlobalTransforms.size() - 1) + sceneTransformOffset;
 				newCluster.materialIndex = primitive.sceneMaterialIndex;
 				
@@ -307,6 +309,12 @@ void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset, GLint s
 					+ sceneIndexOffset;
 				newPrimitive.meshlets[i].sceneVertexOffset = static_cast<GLint>(meshlets[i].vertex_offset) + sceneVertexOffset
 					+ localVertexOffset;
+
+				meshopt_Bounds meshletBounds{ meshopt_computeMeshletBounds(&meshletVertices[meshlets[i].vertex_offset],
+					&meshletTriangles[meshlets[i].triangle_offset], meshlets[i].triangle_count, &primitiveVertices[0].pos.x,
+					primitiveVertices.size(), sizeof(Vertex)) };
+
+				newPrimitive.meshlets[i].boundingSphere = { meshletBounds.center[0], meshletBounds.center[1], meshletBounds.center[2], meshletBounds.radius };
 			}
 
 			newPrimitive.localMaterialIndex = asset->meshes[i].primitives[n].materialIndex.value_or(-1);

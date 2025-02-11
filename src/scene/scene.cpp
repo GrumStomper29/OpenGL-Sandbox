@@ -1,5 +1,6 @@
 #include "scene.hpp"
 
+#include "../camera/camera.hpp"
 #include "../model/model.hpp"
 
 #include "glad/glad.h"
@@ -27,6 +28,11 @@ SceneObject::~SceneObject()
 
 	glDeleteBuffers(1, &mWriteBlendIbo);
 	glDeleteBuffers(1, &mIndirectBlendDrawBuffer);
+
+	for (auto& [name, shaderProgram] : mShaderPrograms)
+	{
+		glDeleteProgram(shaderProgram.program);
+	}
 }
 
 void SceneObject::loadModels(const std::vector<ModelObjectLoadInfo>& loadInfo)
@@ -42,10 +48,7 @@ void SceneObject::loadModels(const std::vector<ModelObjectLoadInfo>& loadInfo)
 		mIndexCount += mModels[info.name].mIndices.size();
 		mBlendIndexCount += mModels[info.name].mBlendIndexCount;
 
-		for (auto& [name, shaderProgram] : mShaderPrograms)
-		{
-			glDeleteProgram(shaderProgram.program);
-		}
+		// Why were shader programs being deleted here?
 	}
 }
 
@@ -65,6 +68,17 @@ void SceneObject::initGlMemory()
 
 	glCreateBuffers(1, &mIbo);
 	glNamedBufferStorage(mIbo, mIndexCount * sizeof(std::uint32_t), nullptr, GL_DYNAMIC_STORAGE_BIT);
+
+	glCreateBuffers(1, &mViewFrustumSsbo);
+	glNamedBufferStorage(mViewFrustumSsbo, sizeof(Camera::Frustum), nullptr, GL_MAP_WRITE_BIT);
+
+	GLsizei visibilityBitmaskSize{ static_cast<GLsizei>(std::ceil(mClusterCount / 8.0f)) };
+	visibilityBitmaskSize = ((visibilityBitmaskSize + 32 - 1) / 32) * 32; // Rounded up to a multiple of 32 because OpenGL GLSL only supports 32 bit types
+
+	glCreateBuffers(1, &mVisibilityBitmaskSsbo);
+	glNamedBufferStorage(mVisibilityBitmaskSsbo, visibilityBitmaskSize, nullptr, GL_NONE);
+	GLubyte visibilityClearData{ 0 }; // should be zero
+	glClearNamedBufferData(mVisibilityBitmaskSsbo, GL_R8UI, GL_RED, GL_UNSIGNED_BYTE, &visibilityClearData);
 
 	int materialOffset{ 0 };
 	int transformOffset{ 0 };

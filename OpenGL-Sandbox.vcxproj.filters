@@ -379,5 +379,14 @@
     <None Include="src\shaders\triangle_cull.comp">
       <Filter>Source Files\Shaders</Filter>
     </None>
+    <None Include="src\shaders\occluder_batch.comp">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="src\shaders\cluster_batch.comp">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="src\shaders\depth_downsample.comp">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

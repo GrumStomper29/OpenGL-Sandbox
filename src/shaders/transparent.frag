@@ -11,12 +11,18 @@ in VsOut
 
 struct Cluster
 {
+	vec4 boundingSphere;
+
 	uint transformIndex;
 	int materialIndex;
 
 	uint indexCount;
 	uint firstIndex;
 	int vertexOffset;
+
+	int padding0;
+	int padding1;
+	int padding2;
 };
 layout(binding = 0, std430) readonly buffer ClusterBuffer
 {

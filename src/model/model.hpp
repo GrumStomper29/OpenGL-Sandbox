@@ -54,6 +54,8 @@ public:
 
 	struct Meshlet
 	{
+		glm::vec4 boundingSphere{};
+
 		GLint triangleCount{};
 		GLuint firstIndex{};
 		GLint sceneVertexOffset{};
@@ -62,12 +64,18 @@ public:
 	// Clusters are instances of meshlets.
 	struct Cluster
 	{
+		glm::vec4 boundingSphere{};
+
 		GLuint transformIndex{};
 		GLint materialIndex{ -1 };
 
 		GLuint indexCount{};
 		GLuint firstIndex{};
 		GLint vertexOffset{};
+
+		GLint padding0{};
+		GLint padding1{};
+		GLint padding2{};
 	};
 
 	struct Primitive

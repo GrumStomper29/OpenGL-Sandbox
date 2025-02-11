@@ -1,0 +1,62 @@
+#version 430 core
+
+
+
+uniform layout(binding = 0, r32f) readonly image2D lastLevel;
+
+uniform layout(binding = 1, r32f) writeonly image2D currentLevel;
+
+
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	ivec2 currentLevelTexelCoord = ivec2(gl_WorkGroupID.x * 32 + gl_LocalInvocationID.x, 
+		gl_WorkGroupID.y);
+
+	if (currentLevelTexelCoord.x >= imageSize(currentLevel).x) return;
+
+	ivec2 lastLevelTexelCoord = 2 * currentLevelTexelCoord;
+
+	vec4 depthVals;
+	depthVals.x = imageLoad(lastLevel, lastLevelTexelCoord).r;
+	depthVals.y = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(1, 0)).r;
+	depthVals.z = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(1, 1)).r;
+	depthVals.w = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(0, 1)).r;
+
+	float minDepth = min(min(depthVals.x, depthVals.y), min(depthVals.z, depthVals.w));
+
+
+
+	// for NPOT depth buffers
+	bool includeExtraCol = ((imageSize(lastLevel).x & 1) != 0);
+	bool includeExtraRow = ((imageSize(lastLevel).y & 1) != 0);
+
+	if (includeExtraCol)
+	{
+		vec2 extraColDepthVals;
+		extraColDepthVals.x = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(2, 0)).r;
+		extraColDepthVals.y = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(2, 1)).r;
+
+		if (includeExtraRow)
+		{
+			float cornerDepthVal = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(2, 2)).r;
+
+			minDepth = min(minDepth, cornerDepthVal);
+		}
+
+		minDepth = min(minDepth, min(extraColDepthVals.x, extraColDepthVals.y));
+	}
+	if (includeExtraRow)
+	{
+		vec2 extraRowDepthVals;
+		extraRowDepthVals.x = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(0, 2)).r;
+		extraRowDepthVals.y = imageLoad(lastLevel, lastLevelTexelCoord + ivec2(1, 2)).r;
+
+		minDepth = min(minDepth, min(extraRowDepthVals.x, extraRowDepthVals.y));
+	}
+
+
+
+	imageStore(currentLevel, currentLevelTexelCoord, vec4(minDepth));
+}

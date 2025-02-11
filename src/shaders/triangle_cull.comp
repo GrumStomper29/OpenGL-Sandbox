@@ -20,12 +20,18 @@ layout (binding = 1, std430) buffer IndirectDrawBuffer
 
 struct Cluster
 {
+	vec4 boundingSphere;
+
 	uint transformIndex;
 	int materialIndex;
 
 	uint indexCount;
 	uint firstIndex;
 	int vertexOffset;
+
+	int padding0;
+	int padding1;
+	int padding2;
 };
 layout (binding = 2, std430) readonly buffer ClusterBuffer
 {
@@ -78,6 +84,58 @@ layout (binding = 6, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
+layout (binding = 7, std430) readonly buffer ViewFrustum
+{
+	vec4 top;
+	vec4 bottom;
+
+	vec4 right;
+	vec4 left;
+
+	vec4 far;
+	vec4 near;
+} viewFrustum;
+
+layout(binding = 8, std430) readonly buffer TransformBuffer
+{
+	mat4 transforms[];
+};
+
+
+
+// todo: pass by reference
+float getSignedDistanceToPlane(vec4 plane, vec3 point)
+{
+	return dot(plane.xyz, point) + plane.w;
+}
+
+bool sphereIsOnOrForwardPlane(vec4 sphere, vec4 plane)
+{
+	return getSignedDistanceToPlane(plane, sphere.xyz) > -sphere.w;
+}
+
+bool sphereIsOnViewFrustum(vec4 sphere, mat4 transform)
+{
+	vec3 scale;
+	scale.x = length(vec3(transform[0]));
+	scale.y = length(vec3(transform[1]));
+	scale.z = length(vec3(transform[2]));
+
+	vec3 center = vec3(transform * vec4(sphere.xyz, 1.0f));
+
+	float maxScale = max(scale.x, max(scale.y, scale.z));
+
+	vec4 globalSphere = vec4(center, sphere.w * maxScale);
+
+	return ((sphereIsOnOrForwardPlane(globalSphere, viewFrustum.left)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.right)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.far)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.near)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.top)) &&
+		(sphereIsOnOrForwardPlane(globalSphere, viewFrustum.bottom)));
+}
+
+
 
 // per cluster
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -93,7 +151,11 @@ void main()
 		return;
 	}
 
-	// do culling stuff
+	
+	if (!sphereIsOnViewFrustum(clusters[clusterId].boundingSphere, transforms[clusters[clusterId].transformIndex]))
+	{
+		return;
+	}
 
 	if (materials[clusters[clusterId].materialIndex].alphaBlend)
 	{

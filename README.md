@@ -2,10 +2,10 @@
 Sandbox for experimenting with 3D graphics programming techniques.
 
 ## Building
-Todo
+Requires Visual Studio. Simply open the solution (.sln) file and compile the project!
 
 ## Usage
-Todo
+The assets folder must contain a "Bistro1.glb" and "cubes.glb". The content of these files doesn't matter, provided that there is some opaque geometry and some alpha-blended geometry.
 
 Use WASDEQ to move. Rotate with the arrow keys. 
 
@@ -19,6 +19,8 @@ Todo
 - fastgltf
 - Dear ImGui
 - stb
+- meshoptimizer
+- simdjson
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)

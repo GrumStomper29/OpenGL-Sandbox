@@ -34,7 +34,8 @@ struct Cluster
 	uint firstIndex;
 	int vertexOffset;
 
-	int padding0;
+	uint viewId;
+
 	int padding1;
 	int padding2;
 };
@@ -198,11 +199,11 @@ float sampleHiZ(ivec2 coords, int level)
 
 
 // per cluster
-layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
 void main()
 {
 	uint clusterId = 
-		gl_WorkGroupID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
+		(gl_WorkGroupID.z * 64u + gl_LocalInvocationID.z) * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
 		gl_WorkGroupID.y * gl_NumWorkGroups.x +
 		gl_WorkGroupID.x;
 
@@ -215,6 +216,7 @@ void main()
 	uint n = clusterId - i * 32;
 	uint bits = 1 << n;
 	bool clusterWasVisible = bool(visibilityBitmask[i] & bits);
+
 
 
 	bool isVisible = sphereIsOnViewFrustum(clusters[clusterId].boundingSphere, transforms[clusters[clusterId].transformIndex]);

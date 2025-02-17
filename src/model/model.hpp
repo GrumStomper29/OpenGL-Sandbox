@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <vector>
 
+// ModelObject is not guaranteed to contain any data
 class ModelObject final
 {
 public:
@@ -73,7 +74,8 @@ public:
 		GLuint firstIndex{};
 		GLint vertexOffset{};
 
-		GLint padding0{};
+		GLuint viewId{};
+
 		GLint padding1{};
 		GLint padding2{};
 	};
@@ -99,7 +101,7 @@ public:
 		glm::mat4 localTransform{};
 	};
 
-	// todo: is this safe?
+	// No operations should expect/require the ModelObject to contain data
 	ModelObject() = default;
 
 	ModelObject(const std::filesystem::path& path, int sceneVertexOffset, int sceneIndexOffset, 

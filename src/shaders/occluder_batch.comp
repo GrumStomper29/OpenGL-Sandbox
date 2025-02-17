@@ -27,7 +27,8 @@ struct Cluster
 	uint firstIndex;
 	int vertexOffset;
 
-	int padding0;
+	uint viewId;
+
 	int padding1;
 	int padding2;
 };

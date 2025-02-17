@@ -20,7 +20,8 @@ struct Cluster
 	uint firstIndex;
 	int vertexOffset;
 
-	int padding0;
+	uint viewId;
+
 	int padding1;
 	int padding2;
 };
@@ -56,8 +57,6 @@ layout(binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
-//uniform int materialIndex;
-
 
 
 layout (location = 0) out vec4 accum;
@@ -79,17 +78,9 @@ void main()
 	{
 		outColor = materials[materialIndex].colorFactor;
 	}
+
 	/*
-	const vec3 lightDir = normalize(const vec3(-2.0f, 8.0f, 1.0f));
-	const vec3 lightCol = const vec3(1.0f);
-
-	const float ambientStrength = 0.4f;
-	const vec3 ambient = ambientStrength * lightCol;
-
-	float diffuse = max(dot(normalize(fsIn.norm), lightDir), -1.0f); // changed to -1
-
-	diffuse = (diffuse + 1.0f) / 2.0f;
-	outColor = vec4((diffuse * lightCol), 1.0f) * outColor;
+	add lighting calcs here
 	*/
 
 	float weight = clamp(pow(min(1.0, outColor.a * 10.0) + 0.01, 3.0) * 1e8 *

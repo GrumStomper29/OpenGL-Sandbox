@@ -47,8 +47,6 @@ void SceneObject::loadModels(const std::vector<ModelObjectLoadInfo>& loadInfo)
 		mVertexCount += mModels[info.name].mVertices.size();
 		mIndexCount += mModels[info.name].mIndices.size();
 		mBlendIndexCount += mModels[info.name].mBlendIndexCount;
-
-		// Why were shader programs being deleted here?
 	}
 }
 
@@ -77,14 +75,14 @@ void SceneObject::initGlMemory()
 
 	glCreateBuffers(1, &mVisibilityBitmaskSsbo);
 	glNamedBufferStorage(mVisibilityBitmaskSsbo, visibilityBitmaskSize, nullptr, GL_NONE);
-	GLubyte visibilityClearData{ 0 }; // should be zero
+	GLubyte visibilityClearData{ 0 };
 	glClearNamedBufferData(mVisibilityBitmaskSsbo, GL_R8UI, GL_RED, GL_UNSIGNED_BYTE, &visibilityClearData);
 
-	int materialOffset{ 0 };
+	int materialOffset { 0 };
 	int transformOffset{ 0 };
-	int clusterOffset{ 0 };
-	int vertexOffset{ 0 };
-	int indexOffset{ 0 };
+	int clusterOffset  { 0 };
+	int vertexOffset   { 0 };
+	int indexOffset    { 0 };
 
 	for (const auto& [name, model] : mModels)
 	{
@@ -118,15 +116,15 @@ void SceneObject::initGlMemory()
 
 	IndirectDraw indirectDraw{};
 	glCreateBuffers(1, &mIndirectDrawBuffer);
-	glNamedBufferStorage(mIndirectDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
+	glNamedBufferStorage(mIndirectDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
 
 	glVertexArrayElementBuffer(mVao, mWriteIbo);
 
 	glCreateBuffers(1, &mWriteBlendIbo);
-	glNamedBufferStorage(mWriteBlendIbo, mBlendIndexCount * sizeof(GLuint), nullptr, GL_NONE); // Todo: find better flag
+	glNamedBufferStorage(mWriteBlendIbo, mBlendIndexCount * sizeof(GLuint), nullptr, GL_NONE);
 
 	glCreateBuffers(1, &mIndirectBlendDrawBuffer);
-	glNamedBufferStorage(mIndirectBlendDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
+	glNamedBufferStorage(mIndirectBlendDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
 
 	glVertexArrayElementBuffer(mBlendVao, mWriteBlendIbo);
 }

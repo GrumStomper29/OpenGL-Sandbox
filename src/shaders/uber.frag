@@ -20,7 +20,7 @@ struct Cluster
 	uint firstIndex;
 	int vertexOffset;
 
-	int padding0;
+	uint viewId;
 	int padding1;
 	int padding2;
 };
@@ -56,10 +56,9 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
-uniform vec3 meshletCol;
-
 out vec4 outColor;
 out vec4 outNorm;
+
 
 
 // From http://www.thetenthplanet.de/archives/1180

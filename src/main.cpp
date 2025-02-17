@@ -35,40 +35,41 @@
 
 void message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const* message, void const* user_param)
 {
-    auto const src_str = [source]() {
-        switch (source)
-        {
-        case GL_DEBUG_SOURCE_API: return "API";
-        case GL_DEBUG_SOURCE_WINDOW_SYSTEM: return "WINDOW SYSTEM";
-        case GL_DEBUG_SOURCE_SHADER_COMPILER: return "SHADER COMPILER";
-        case GL_DEBUG_SOURCE_THIRD_PARTY: return "THIRD PARTY";
-        case GL_DEBUG_SOURCE_APPLICATION: return "APPLICATION";
-        case GL_DEBUG_SOURCE_OTHER: return "OTHER";
-        }
-        }();
+	auto const src_str = [source]() {
+		switch (source)
+		{
+		case GL_DEBUG_SOURCE_API: return "API";
+		case GL_DEBUG_SOURCE_WINDOW_SYSTEM: return "WINDOW SYSTEM";
+		case GL_DEBUG_SOURCE_SHADER_COMPILER: return "SHADER COMPILER";
+		case GL_DEBUG_SOURCE_THIRD_PARTY: return "THIRD PARTY";
+		case GL_DEBUG_SOURCE_APPLICATION: return "APPLICATION";
+		case GL_DEBUG_SOURCE_OTHER: return "OTHER";
+		}
+		}();
 
-        auto const type_str = [type]() {
-            switch (type)
-            {
-            case GL_DEBUG_TYPE_ERROR: return "ERROR";
-            case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "DEPRECATED_BEHAVIOR";
-            case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: return "UNDEFINED_BEHAVIOR";
-            case GL_DEBUG_TYPE_PORTABILITY: return "PORTABILITY";
-            case GL_DEBUG_TYPE_PERFORMANCE: return "PERFORMANCE";
-            case GL_DEBUG_TYPE_MARKER: return "MARKER";
-            case GL_DEBUG_TYPE_OTHER: return "OTHER";
-            }
-            }();
+	auto const type_str = [type]() {
+		switch (type)
+		{
+		case GL_DEBUG_TYPE_ERROR: return "ERROR";
+		case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "DEPRECATED_BEHAVIOR";
+		case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: return "UNDEFINED_BEHAVIOR";
+		case GL_DEBUG_TYPE_PORTABILITY: return "PORTABILITY";
+		case GL_DEBUG_TYPE_PERFORMANCE: return "PERFORMANCE";
+		case GL_DEBUG_TYPE_MARKER: return "MARKER";
+		case GL_DEBUG_TYPE_OTHER: return "OTHER";
+		}
+		}();
 
-            auto const severity_str = [severity]() {
-                switch (severity) {
-                case GL_DEBUG_SEVERITY_NOTIFICATION: return "NOTIFICATION";
-                case GL_DEBUG_SEVERITY_LOW: return "LOW";
-                case GL_DEBUG_SEVERITY_MEDIUM: return "MEDIUM";
-                case GL_DEBUG_SEVERITY_HIGH: return "HIGH";
-                }
-                }();
-                std::cout << src_str << ", " << type_str << ", " << severity_str << ", " << id << ": " << message << '\n';
+	auto const severity_str = [severity]() {
+		switch (severity) {
+		case GL_DEBUG_SEVERITY_NOTIFICATION: return "NOTIFICATION";
+		case GL_DEBUG_SEVERITY_LOW: return "LOW";
+		case GL_DEBUG_SEVERITY_MEDIUM: return "MEDIUM";
+		case GL_DEBUG_SEVERITY_HIGH: return "HIGH";
+		}
+		}();
+
+	std::cout << src_str << ", " << type_str << ", " << severity_str << ", " << id << ": " << message << '\n';
 }         
 
 struct Stats
@@ -143,7 +144,9 @@ int main()
     SceneObject sceneObject{};
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
+        //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
         { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
         { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
     sceneObject.loadModels(modelLoadInfos);
@@ -153,7 +156,6 @@ int main()
     sceneObject.mShaderPrograms["transparent"] = { "../../src/shaders/uber.vert", "../../src/shaders/transparent.frag" };
     sceneObject.mShaderPrograms["comp"] = { "../../src/shaders/comp.vert", "../../src/shaders/comp.frag" };
     sceneObject.mShaderPrograms["lighting"] = { "../../src/shaders/comp.vert", "../../src/shaders/lighting.frag" };
-    sceneObject.mShaderPrograms["culling"] = { .computePath{ "../../src/shaders/triangle_cull.comp" } };
     sceneObject.mShaderPrograms["occluder_batch"] = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
     sceneObject.mShaderPrograms["cluster_batch"] = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
     sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
@@ -200,7 +202,7 @@ int main()
     glTextureStorage2D(opaqueTexture, 1, GL_RGBA16F, screenWidth, screenHeight);
     GLuint normalTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &normalTexture);
-    glTextureStorage2D(normalTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats
+    glTextureStorage2D(normalTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats (after srgb)
     GLuint depthTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &depthTexture);
     glTextureStorage2D(depthTexture, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
@@ -394,8 +396,8 @@ int main()
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, sceneObject.mVisibilityBitmaskSsbo);
 
-            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount) / 1.0f), 
-                std::ceil(std::cbrt(sceneObject.mClusterCount) / 1.0f), std::ceil(std::cbrt(sceneObject.mClusterCount) / 64.0f));
+            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)), 
+                std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount) / 64.0f));
 
             GLsync occluderBatchFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -433,6 +435,8 @@ int main()
 
             if (updateViewFrustum)
             {
+                glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
                 glCopyImageSubData(depthTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
                     hiZTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
                     screenWidth, screenHeight, 1);
@@ -509,7 +513,7 @@ int main()
             glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
             glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)),
-                std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount)));
+                std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount) / 64.0f));
 
             GLsync clusterBatchFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -541,8 +545,6 @@ int main()
             glDeleteSync(clusterBatchFence);
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
-
-
 
             glDepthMask(GL_FALSE);
             glEnable(GL_BLEND);

@@ -29,6 +29,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -39,6 +40,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -275,7 +277,6 @@
     <None Include="src\shaders\lighting.frag" />
     <None Include="src\shaders\occluder_batch.comp" />
     <None Include="src\shaders\transparent.frag" />
-    <None Include="src\shaders\triangle_cull.comp" />
     <None Include="src\shaders\uber.frag" />
     <None Include="src\shaders\uber.vert" />
   </ItemGroup>

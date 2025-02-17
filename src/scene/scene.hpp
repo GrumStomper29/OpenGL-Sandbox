@@ -16,7 +16,7 @@ public:
 	{
 		std::string name{};
 		std::filesystem::path path{};
-		std::filesystem::path directory{ "../../assets" }; // It MIGHT be a bad idea to hardcode this. 
+		std::filesystem::path directory{ "../../assets" };
 	};
 
 	struct ShaderProgram

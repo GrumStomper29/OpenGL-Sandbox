@@ -376,9 +376,6 @@
     <None Include="src\shaders\lighting.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="src\shaders\triangle_cull.comp">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
     <None Include="src\shaders\occluder_batch.comp">
       <Filter>Source Files\Shaders</Filter>
     </None>

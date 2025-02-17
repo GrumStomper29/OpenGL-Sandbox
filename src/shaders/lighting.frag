@@ -21,11 +21,8 @@ void main()
 
 	const vec3 ambient = ambientStrength * ambientCol;
 
-	float diffuse = max(dot(normalize(texelFetch(inNorm, coords, 0).xyz), lightDir), 0.0f); // changed to -1
+	float diffuse = max(dot(normalize(texelFetch(inNorm, coords, 0).xyz), lightDir), 0.0f);
 
-	//outColor = vec4((diffuse * lightCol + ambient), 1.0f) * outColor;
-
-	//diffuse = (diffuse + 1.0f) / 2.0f;
 	outColor = vec4((diffuse * lightCol + ambient), 1.0f) * outColor;
 
 	if (hiZLevel != 0)

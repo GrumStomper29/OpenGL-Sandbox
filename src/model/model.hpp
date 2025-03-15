@@ -105,7 +105,7 @@ public:
 	ModelObject() = default;
 
 	ModelObject(const std::filesystem::path& path, int sceneVertexOffset, int sceneIndexOffset, 
-		int sceneMaterialOffset, int sceneTransformOffset, const std::filesystem::path& directory = "assets");
+		int sceneMaterialOffset, int sceneTransformOffset, int viewCount, const std::filesystem::path& directory = "assets");
 
 	ModelObject(const ModelObject&) = delete;
 	ModelObject& operator=(const ModelObject&) = delete;
@@ -115,9 +115,9 @@ public:
 
 	~ModelObject();
 
-	void buildPrimitiveUniforms(int sceneMaterialOffset, int sceneTransformOffset);
+	void buildPrimitiveUniforms(int sceneMaterialOffset, int sceneTransformOffset, int viewCount);
 	void buildPrimitiveUniformsFromNodeAndChildren(const Node& node, const glm::mat4& parentTransform, 
-		int sceneMaterialOffset, int sceneTransformOffset);
+		int sceneMaterialOffset, int sceneTransformOffset, int viewCount);
 
 	std::vector<Node> mNodes{};
 	std::vector<int> mRootNodes{};

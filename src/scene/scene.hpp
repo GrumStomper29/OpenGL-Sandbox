@@ -37,6 +37,15 @@ public:
 		GLuint baseInstance{ 0 };
 	};
 
+	struct View
+	{
+		// view frustum
+		glm::mat4 view{};
+		glm::mat4 proj{};
+		glm::vec4 camPosAndZNear{};
+		GLuint hiZ{};
+	};
+
 	SceneObject() = default;
 
 	SceneObject(const SceneObject&) = delete;
@@ -72,9 +81,14 @@ public:
 	GLuint mWriteBlendIbo{};
 	GLuint mIndirectBlendDrawBuffer{};
 
+	GLuint mIndirectDrawBuffers{};
+	GLuint mIndirectBlendDrawBuffers{};
+
 	GLuint mViewFrustumSsbo{};
 
 	GLuint mVisibilityBitmaskSsbo{};
+
+	int mViewCount{ 1 };
 
 	GLsizei mMaterialCount{ 0 };
 	GLsizei mTransformCount{ 0 };

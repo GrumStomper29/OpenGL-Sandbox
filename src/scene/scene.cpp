@@ -39,7 +39,7 @@ void SceneObject::loadModels(const std::vector<ModelObjectLoadInfo>& loadInfo)
 {
 	for (const auto& info : loadInfo)
 	{
-		mModels[info.name] = ModelObject{ info.path, mVertexCount, mIndexCount, mMaterialCount, mTransformCount, info.directory };
+		mModels[info.name] = ModelObject{ info.path, mVertexCount, mIndexCount, mMaterialCount, mTransformCount, mViewCount, info.directory };
 
 		mMaterialCount += mModels[info.name].mMaterials.size();
 		mTransformCount += mModels[info.name].mGlobalTransforms.size();
@@ -112,7 +112,7 @@ void SceneObject::initGlMemory()
 	glCreateVertexArrays(1, &mBlendVao);
 
 	glCreateBuffers(1, &mWriteIbo);
-	glNamedBufferStorage(mWriteIbo, mIndexCount * sizeof(GLuint), nullptr, GL_NONE);
+	glNamedBufferStorage(mWriteIbo, mIndexCount * mViewCount * sizeof(GLuint), nullptr, GL_NONE);
 
 	IndirectDraw indirectDraw{};
 	glCreateBuffers(1, &mIndirectDrawBuffer);
@@ -121,10 +121,15 @@ void SceneObject::initGlMemory()
 	glVertexArrayElementBuffer(mVao, mWriteIbo);
 
 	glCreateBuffers(1, &mWriteBlendIbo);
-	glNamedBufferStorage(mWriteBlendIbo, mBlendIndexCount * sizeof(GLuint), nullptr, GL_NONE);
+	glNamedBufferStorage(mWriteBlendIbo, mBlendIndexCount * mViewCount * sizeof(GLuint), nullptr, GL_NONE);
 
 	glCreateBuffers(1, &mIndirectBlendDrawBuffer);
 	glNamedBufferStorage(mIndirectBlendDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
+
+	glCreateBuffers(1, &mIndirectDrawBuffers);
+	glCreateBuffers(1, &mIndirectBlendDrawBuffers);
+	glNamedBufferStorage(mIndirectDrawBuffers,      mViewCount * sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
+	glNamedBufferStorage(mIndirectBlendDrawBuffers, mViewCount * sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
 
 	glVertexArrayElementBuffer(mBlendVao, mWriteBlendIbo);
 }

@@ -1,6 +1,7 @@
 #version 430 core
 
 uniform uint clusterCount;
+uniform uint viewIndexCount;
 
 uniform mat4 projectionMatrix;
 uniform float zNear;
@@ -14,14 +15,19 @@ layout(binding = 0, std430) readonly buffer IndexBuffer
 	uint indices[];
 };
 
-layout (binding = 1, std430) buffer IndirectDrawBuffer
+struct IndirectDraw
 {
 	uint count;
 	uint instanceCount;
 	uint firstIndex;
 	int baseVertex;
 	uint baseInstance;
-} indirectDraw;
+};
+
+layout (binding = 1, std430) buffer IndirectDrawBuffers
+{
+	IndirectDraw indirectDraws[];
+};
 
 struct Cluster
 {
@@ -50,14 +56,10 @@ layout (binding = 3, std430) buffer IndexWriteBuffer
 };
 
 
-layout (binding = 4, std430) buffer IndirectBlendDrawBuffer
+layout (binding = 4, std430) buffer IndirectBlendDrawBuffers
 {
-	uint count;
-	uint instanceCount;
-	uint firstIndex;
-	int baseVertex;
-	uint baseInstance;
-} indirectBlendDraw;
+	IndirectDraw indirectBlendDraws[];
+};
 
 layout (binding = 5, std430) buffer BlendIndexWriteBuffer
 {
@@ -268,13 +270,15 @@ void main()
 		return;
 	}
 
+	uint viewId = clusters[clusterId].viewId;
+	uint indexCount = clusters[clusterId].indexCount;
 
 	// If cluster wasn't visible last frame, or cluster is alpha blend, batch it here
 	if (materials[clusters[clusterId].materialIndex].alphaBlend)
 	{
-		uint bufferStart = atomicAdd(indirectBlendDraw.count, clusters[clusterId].indexCount);
+		uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectBlendDraws[viewId].count, indexCount);
 
-		for (int i = 0; i < clusters[clusterId].indexCount; i++)
+		for (int i = 0; i < indexCount; i++)
 		{
 			// 25 bits for cluster id, 7 bits for index
 			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
@@ -285,7 +289,7 @@ void main()
 	{
 		if (!clusterWasVisible)
 		{
-			uint bufferStart = atomicAdd(indirectDraw.count, clusters[clusterId].indexCount);
+			uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectDraws[viewId].count, indexCount);
 
 			for (int i = 0; i < clusters[clusterId].indexCount; i++)
 			{

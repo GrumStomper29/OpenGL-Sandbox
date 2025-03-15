@@ -142,10 +142,13 @@ int main()
 
 
     SceneObject sceneObject{};
+    sceneObject.mViewCount = 5;
+
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
         { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
         { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
@@ -376,6 +379,11 @@ int main()
             std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffer);
 
+            std::vector<SceneObject::IndirectDraw> indirectDraws(sceneObject.mViewCount);
+            map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
+
             if (updateViewFrustum)
             {
                 Camera::Frustum viewFrustum{ camera.getViewFrustum(proj) };
@@ -388,9 +396,11 @@ int main()
 
             auto loc{ glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "clusterCount") };
             glUniform1ui(loc, sceneObject.mClusterCount);
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "viewIndexCount");
+            glUniform1ui(loc, sceneObject.mIndexCount);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffers);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
@@ -413,7 +423,7 @@ int main()
 
             glBindVertexArray(sceneObject.mVao);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
@@ -483,10 +493,21 @@ int main()
             std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffer);
 
+
+            map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
+
+            map = glMapNamedBuffer(sceneObject.mIndirectBlendDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffers);
+
             glUseProgram(sceneObject.mShaderPrograms.at("cluster_batch").program);
 
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "clusterCount");
             glUniform1ui(loc, sceneObject.mClusterCount);
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "viewIndexCount");
+            glUniform1ui(loc, sceneObject.mIndexCount);
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "projectionMatrix");
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(proj));
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "zNear");
@@ -499,10 +520,10 @@ int main()
             glUniform1i(loc, 0);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffers);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIndirectBlendDrawBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIndirectBlendDrawBuffers);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mWriteBlendIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, sceneObject.mViewFrustumSsbo);
@@ -526,7 +547,7 @@ int main()
 
             glBindVertexArray(sceneObject.mVao);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
@@ -573,7 +594,7 @@ int main()
 
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteBlendIbo);
             glBindVertexArray(sceneObject.mBlendVao);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffers);
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 

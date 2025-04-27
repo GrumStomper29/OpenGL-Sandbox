@@ -111,7 +111,7 @@ void main()
 		for (int i = 0; i < indexCount; i++)
 		{
 			// 25 bits for cluster id, 7 bits for index.
-			// I should theoretically only need 6 for the index, but it wouldn't work otherwise. Oh well :)
+			// I should theoretically only need 6 for the index, but it doesn't work otherwise. Oh well :)
 			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
 			writeIndices[bufferStart + i] = index;
 		}

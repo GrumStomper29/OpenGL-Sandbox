@@ -55,7 +55,7 @@ glm::mat4 toGlmMat4(const fastgltf::math::fmat4x4& m)
 
 
 ModelObject::ModelObject(const std::filesystem::path& path, int sceneVertexOffset, 
-	int sceneIndexOffset, int sceneMaterialOffset, int sceneTransformOffset, const std::filesystem::path& directory)
+	int sceneIndexOffset, int sceneMaterialOffset, int sceneTransformOffset, int viewCount, const std::filesystem::path& directory)
 {
 	fastgltf::Parser parser{};
 
@@ -102,7 +102,7 @@ ModelObject::ModelObject(const std::filesystem::path& path, int sceneVertexOffse
 
 	loadMaterials(asset);
 
-	buildPrimitiveUniforms(sceneMaterialOffset, sceneTransformOffset);
+	buildPrimitiveUniforms(sceneMaterialOffset, sceneTransformOffset, viewCount);
 }
 
 ModelObject::ModelObject(ModelObject&& o)
@@ -112,7 +112,6 @@ ModelObject::ModelObject(ModelObject&& o)
 
 ModelObject& ModelObject::operator=(ModelObject&& o)
 {
-
 	cleanup();
 	moveFrom(std::move(o));
 
@@ -126,19 +125,20 @@ ModelObject::~ModelObject()
 
 
 
-void ModelObject::buildPrimitiveUniforms(int sceneMaterialOffset, int sceneTransformOffset)
+void ModelObject::buildPrimitiveUniforms(int sceneMaterialOffset, int sceneTransformOffset, int viewCount)
 {
 	mGlobalTransforms.clear();
 	mGlobalTransforms.reserve(mPrimitiveCount);
 
 	for (auto rootNodeIndex : mRootNodes)
 	{
-		buildPrimitiveUniformsFromNodeAndChildren(mNodes[rootNodeIndex], glm::mat4{ 1.0f }, sceneMaterialOffset, sceneTransformOffset);
+		buildPrimitiveUniformsFromNodeAndChildren(mNodes[rootNodeIndex], glm::mat4{ 1.0f }, sceneMaterialOffset, 
+			sceneTransformOffset, viewCount);
 	}
 }
 
 void ModelObject::buildPrimitiveUniformsFromNodeAndChildren(const Node& node, const glm::mat4& parentTransform, 
-	int sceneMaterialOffset, int sceneTransformOffset)
+	int sceneMaterialOffset, int sceneTransformOffset, int viewCount)
 {
 	if (node.mesh != -1)
 	{
@@ -149,25 +149,31 @@ void ModelObject::buildPrimitiveUniformsFromNodeAndChildren(const Node& node, co
 
 			for (const auto& cluster : primitive.meshlets)
 			{
-				Cluster newCluster{};
+				for (int i{ 0 }; i < viewCount; ++i)
+				{
+					Cluster newCluster{};
 
-				newCluster.boundingSphere = cluster.boundingSphere;
+					newCluster.boundingSphere = cluster.boundingSphere;
 
-				newCluster.transformIndex = (mGlobalTransforms.size() - 1) + sceneTransformOffset;
-				newCluster.materialIndex = primitive.sceneMaterialIndex;
-				
-				newCluster.indexCount = cluster.triangleCount * 3;
-				newCluster.firstIndex = cluster.firstIndex;
-				newCluster.vertexOffset = cluster.sceneVertexOffset;
+					newCluster.transformIndex = (mGlobalTransforms.size() - 1) + sceneTransformOffset;
+					newCluster.materialIndex = primitive.sceneMaterialIndex;
 
-				mClusters.push_back(std::move(newCluster));
+					newCluster.indexCount = cluster.triangleCount * 3;
+					newCluster.firstIndex = cluster.firstIndex;
+					newCluster.vertexOffset = cluster.sceneVertexOffset;
+
+					newCluster.viewId = i;
+
+					mClusters.push_back(std::move(newCluster));
+				}
 			}
 		}
 	}
 
 	for (auto childIndex : node.children)
 	{
-		buildPrimitiveUniformsFromNodeAndChildren(mNodes[childIndex], parentTransform * node.localTransform, sceneMaterialOffset, sceneTransformOffset);
+		buildPrimitiveUniformsFromNodeAndChildren(mNodes[childIndex], parentTransform * node.localTransform, 
+			sceneMaterialOffset, sceneTransformOffset, viewCount);
 	}
 }
 

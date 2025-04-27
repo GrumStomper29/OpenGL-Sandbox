@@ -27,6 +27,6 @@ void main()
 
 	if (hiZLevel != 0)
 	{
-		outColor = vec4(texelFetch(hiZ, coords / int(pow(2, hiZLevel)), hiZLevel).r);
+		outColor = vec4(texelFetch(hiZ, ivec2(coords) / int(pow(2, hiZLevel)), hiZLevel).r);
 	}
 }

@@ -142,10 +142,13 @@ int main()
 
 
     SceneObject sceneObject{};
+    sceneObject.mViewCount = 2;
+
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
         { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
         { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
@@ -234,17 +237,25 @@ int main()
     GLuint hiZTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &hiZTexture);
     glTextureStorage2D(hiZTexture, std::floor(std::log2(std::max(screenWidth, screenHeight))) + 1, GL_R32F, screenWidth, screenHeight);
+    GLuint64 hiZTexHandle{ glGetTextureHandleARB(hiZTexture) };
+    glMakeTextureHandleResidentARB(hiZTexHandle);
+
+    constexpr int shadowMapLength{ 1024 };
 
     GLuint shadowFBO{};
     glCreateFramebuffers(1, &shadowFBO);
 
     GLuint shadowMap{};
     glCreateTextures(GL_TEXTURE_2D, 1, &shadowMap);
-    glTextureStorage2D(shadowMap, 1, GL_DEPTH_COMPONENT32F, 1024, 1024);
+    glTextureStorage2D(shadowMap, 1, GL_DEPTH_COMPONENT32F, shadowMapLength, shadowMapLength);
 
     glNamedFramebufferTexture(shadowFBO, GL_DEPTH_ATTACHMENT, shadowMap, 0);
 
-    //glNamedFramebufferDrawBuffer(shadowFBO, GL_DEPTH_ATTACHMENT);
+    GLuint shadowHiZ{};
+    glCreateTextures(GL_TEXTURE_2D, 1, &shadowHiZ);
+    glTextureStorage2D(shadowHiZ, std::floor(std::log2(shadowMapLength)) + 1, GL_R32F, shadowMapLength, shadowMapLength);
+    GLuint64 shadowHiZHandle{ glGetTextureHandleARB(shadowHiZ) };
+    glMakeTextureHandleResidentARB(shadowHiZHandle);
 
     double lastTime{ SDL_GetTicks64() * 0.001 };
 
@@ -334,9 +345,7 @@ int main()
         const glm::mat4 lightProjView{ lightProj * lightView };
 
         glm::mat4 view{ camera.getViewMatrix() };
-        auto proj{ glm::perspective(camera.mFov, 16.0f / 9.0f, camera.mZNear, camera.mZFar) };
-        proj = glm::infinitePerspective(camera.mFov, 16.0f/ 9.0f, camera.mZNear);
-        proj = infiniteReversePerspective(camera.mFov, 16.0f / 9.0f, camera.mZNear);
+        auto proj = infiniteReversePerspective(camera.mFov, 16.0f / 9.0f, camera.mZNear);
         auto s{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ 1.0f }) };
         auto tp{ proj * view };
 
@@ -371,26 +380,48 @@ int main()
         ImGui::End();
 
         {
-            SceneObject::IndirectDraw indirectDraw{};
-            void* map{ glMapNamedBuffer(sceneObject.mIndirectDrawBuffer, GL_WRITE_ONLY) };
-            std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
-            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffer);
+            void* map{};
 
+            std::vector<SceneObject::IndirectDraw> indirectDraws(sceneObject.mViewCount);
+            map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
+
+            sceneObject.mViews[0] =
+            {
+                .viewFrustum{ camera.getViewFrustum(proj) },
+
+                .view{ hiZView },
+                .proj{ proj },
+                .camPosAndZNear{ camera.mPos, camera.mZNear },
+                .hiZ{ hiZTexHandle }
+            };
+            sceneObject.mViews[1] = 
+            {
+            .viewFrustum{ camera.getViewFrustum(proj) },
+
+            .view{ view },
+            .proj{ proj },
+            .camPosAndZNear{ camera.mPos, camera.mZNear },
+            .hiZ{ shadowHiZHandle }
+            };
+            
             if (updateViewFrustum)
             {
-                Camera::Frustum viewFrustum{ camera.getViewFrustum(proj) };
-                map = glMapNamedBuffer(sceneObject.mViewFrustumSsbo, GL_WRITE_ONLY);
-                std::memcpy(map, &viewFrustum, sizeof(Camera::Frustum));
-                glUnmapNamedBuffer(sceneObject.mViewFrustumSsbo);
+                map = glMapNamedBuffer(sceneObject.mViewSsbo, GL_WRITE_ONLY);
+                std::memcpy(map, sceneObject.mViews.data(), sceneObject.mViewCount * sizeof(SceneObject::View));
+                glUnmapNamedBuffer(sceneObject.mViewSsbo);
             }
 
             glUseProgram(sceneObject.mShaderPrograms.at("occluder_batch").program);
 
             auto loc{ glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "clusterCount") };
             glUniform1ui(loc, sceneObject.mClusterCount);
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "viewIndexCount");
+            glUniform1ui(loc, sceneObject.mIndexCount);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffers);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
@@ -409,11 +440,12 @@ int main()
             glClearDepth(0.0f);
 
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
+            glViewport(0, 0, screenWidth, screenHeight);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glBindVertexArray(sceneObject.mVao);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
@@ -431,15 +463,21 @@ int main()
             glWaitSync(occluderBatchFence, GL_NONE, GL_TIMEOUT_IGNORED);
             glDeleteSync(occluderBatchFence);
 
-            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(0 * sizeof(SceneObject::IndirectDraw)));
+
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+            glViewport(0, 0, shadowMapLength, shadowMapLength);
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
 
             if (updateViewFrustum)
             {
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
 
                 glCopyImageSubData(depthTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
-                    hiZTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
-                    screenWidth, screenHeight, 1);
+                                    hiZTexture,   GL_TEXTURE_2D, 0, 0, 0, 0,
+                                    screenWidth, screenHeight, 1);
 
                 GLsync occluderDrawFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -472,44 +510,66 @@ int main()
                 glFinish();
             }
 
+            {
+                glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+                glCopyImageSubData(shadowMap, GL_TEXTURE_2D, 0, 0, 0, 0,
+                    shadowHiZ, GL_TEXTURE_2D, 0, 0, 0, 0,
+                    shadowMapLength, shadowMapLength, 1);
+
+                GLsync occluderDrawFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
+
+                glUseProgram(sceneObject.mShaderPrograms.at("depth_downsample").program);
+
+                int hiZWidth{ shadowMapLength };
+                int hiZHeight{ shadowMapLength };
+
+                for (int i{ 0 }; i < std::floor(std::log2(shadowMapLength)); ++i)
+                {
+                    glBindImageTexture(0, shadowHiZ, i, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+                    glBindImageTexture(1, shadowHiZ, i + 1, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+                    hiZWidth /= 2;
+                    hiZWidth = hiZWidth > 0 ? hiZWidth : 1;
+
+                    hiZHeight /= 2;
+                    hiZHeight = hiZHeight > 0 ? hiZHeight : 1;
+
+                    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+                    glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
+                }
+            }
+
             // todo: cleanup glViewport, glEnable
             glViewport(0, 0, screenWidth, screenHeight);
+            
+            map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
 
-            map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffer, GL_WRITE_ONLY);
-            std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
-            glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffer);
-
-            map = glMapNamedBuffer(sceneObject.mIndirectBlendDrawBuffer, GL_WRITE_ONLY);
-            std::memcpy(map, &indirectDraw, sizeof(SceneObject::IndirectDraw));
-            glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffer);
+            map = glMapNamedBuffer(sceneObject.mIndirectBlendDrawBuffers, GL_WRITE_ONLY);
+            std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
+            glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffers);
 
             glUseProgram(sceneObject.mShaderPrograms.at("cluster_batch").program);
 
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "clusterCount");
             glUniform1ui(loc, sceneObject.mClusterCount);
-            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "projectionMatrix");
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(proj));
-            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "zNear");
-            glUniform1f(loc, camera.mZNear);
-            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "viewMatrix");
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(hiZView));
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "viewIndexCount");
+            glUniform1ui(loc, sceneObject.mIndexCount);
 
-            glBindTextureUnit(0, hiZTexture);
-            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "hiZ");
-            glUniform1i(loc, 0);
-
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffer);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIndirectBlendDrawBuffer);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mWriteBlendIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, sceneObject.mViewFrustumSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, sceneObject.mTransformsSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, sceneObject.mVisibilityBitmaskSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0,  sceneObject.mIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1,  sceneObject.mIndirectDrawBuffers);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2,  sceneObject.mClustersSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3,  sceneObject.mWriteIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4,  sceneObject.mIndirectBlendDrawBuffers);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5,  sceneObject.mWriteBlendIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6,  sceneObject.mMaterialsSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8,  sceneObject.mTransformsSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9,  sceneObject.mVisibilityBitmaskSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, sceneObject.mViewSsbo);
             
-            // todo: is this fine?
             glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
             glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)),
@@ -523,10 +583,11 @@ int main()
             glDisable(GL_BLEND);
 
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
+            glViewport(0, 0, screenWidth, screenHeight);
 
             glBindVertexArray(sceneObject.mVao);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
@@ -573,7 +634,7 @@ int main()
 
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteBlendIbo);
             glBindVertexArray(sceneObject.mBlendVao);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffer);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffers);
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
@@ -621,11 +682,16 @@ int main()
 
     glDeleteFramebuffers(1, &opaqueFBO);
     glDeleteFramebuffers(1, &transparentFBO);
+    glDeleteFramebuffers(1, &shadowFBO);
     
     glDeleteTextures(1, &opaqueTexture);
     glDeleteTextures(1, &accumTexture);
     glDeleteTextures(1, &revealTexture);
     glDeleteTextures(1, &depthTexture);
+    glDeleteTextures(1, &hiZTexture);
+    glDeleteTextures(1, &shadowMap);
+    glDeleteTextures(1, &shadowHiZ);
+
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();

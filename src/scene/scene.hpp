@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../camera/camera.hpp"
 #include "../model/model.hpp"
 
 #include "glad/glad.h"
@@ -37,6 +38,16 @@ public:
 		GLuint baseInstance{ 0 };
 	};
 
+	struct View
+	{
+		Camera::Frustum viewFrustum{};
+
+		glm::mat4 view{ 1.0f };
+		glm::mat4 proj{ 1.0f };
+		glm::vec4 camPosAndZNear{};
+		GLuint64 hiZ{};
+	};
+
 	SceneObject() = default;
 
 	SceneObject(const SceneObject&) = delete;
@@ -53,6 +64,9 @@ public:
 
 	std::unordered_map<std::string, ModelObject> mModels{};
 
+	int mViewCount{ 1 };
+	std::vector<View> mViews{};
+
 	// Per primitive
 	GLuint mTransformsSsbo{};
 
@@ -66,15 +80,16 @@ public:
 
 	GLuint mVao{};
 	GLuint mWriteIbo{}; // Encodes cluster ID in each index for material/transform access
-	GLuint mIndirectDrawBuffer{};
 
 	GLuint mBlendVao{};
 	GLuint mWriteBlendIbo{};
-	GLuint mIndirectBlendDrawBuffer{};
 
-	GLuint mViewFrustumSsbo{};
+	GLuint mIndirectDrawBuffers{};
+	GLuint mIndirectBlendDrawBuffers{};
 
 	GLuint mVisibilityBitmaskSsbo{};
+
+	GLuint mViewSsbo{};
 
 	GLsizei mMaterialCount{ 0 };
 	GLsizei mTransformCount{ 0 };

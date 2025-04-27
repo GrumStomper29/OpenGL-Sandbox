@@ -1,20 +1,25 @@
 #version 430 core
 
 uniform uint clusterCount;
+uniform uint viewIndexCount;
 
 layout(binding = 0, std430) readonly buffer IndexBuffer
 {
 	uint indices[];
 };
 
-layout (binding = 1, std430) buffer IndirectDrawBuffer
+struct IndirectDraw
 {
 	uint count;
 	uint instanceCount;
 	uint firstIndex;
 	int baseVertex;
 	uint baseInstance;
-} indirectDraw;
+};
+layout (binding = 1, std430) buffer IndirectDrawBuffers
+{
+	IndirectDraw indirectDraws[];
+};
 
 struct Cluster
 {
@@ -98,13 +103,15 @@ void main()
 
 	if (activeThread)
 	{
+		uint viewId = clusters[clusterId].viewId;
 		uint indexCount = clusters[clusterId].indexCount;
-		uint bufferStart = atomicAdd(indirectDraw.count, indexCount);
+
+		uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectDraws[viewId].count, indexCount);
 
 		for (int i = 0; i < indexCount; i++)
 		{
 			// 25 bits for cluster id, 7 bits for index.
-			// I should theoretically only need 6 for the index, but it wouldn't work otherwise. Oh well :)
+			// I should theoretically only need 6 for the index, but it doesn't work otherwise. Oh well :)
 			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
 			writeIndices[bufferStart + i] = index;
 		}

@@ -13,10 +13,8 @@ void Camera::move(const glm::vec3& displacement)
 	mPos += glm::vec3{ getRotationMatrix() * glm::vec4{ displacement, 0.0f } };
 }
 
-Camera::Frustum Camera::getViewFrustum(const glm::mat4& proj)
+Camera::Frustum Camera::makeViewFrustum(const glm::mat4& mat)
 {
-	glm::mat4 mat{ proj * getViewMatrix() };
-
 	Frustum frustum{};
 
 	frustum.left   = glm::row(mat, 3) + glm::row(mat, 0);
@@ -39,6 +37,11 @@ Camera::Frustum Camera::getViewFrustum(const glm::mat4& proj)
 	normalizePlane(frustum.far);
 
 	return frustum;
+}
+
+Camera::Frustum Camera::getViewFrustum(const glm::mat4& proj)
+{
+	return makeViewFrustum(proj * getViewMatrix());
 }
 
 glm::mat4 Camera::getViewMatrix()

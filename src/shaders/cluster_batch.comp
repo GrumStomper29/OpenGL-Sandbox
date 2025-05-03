@@ -98,6 +98,9 @@ layout (binding = 9, std430) buffer VisibilityBitmask
 
 struct View
 {
+	mat4 view;
+	mat4 proj;
+
 	vec4 top;
 	vec4 bottom;
 
@@ -107,10 +110,11 @@ struct View
 	vec4 far; // unused
 	vec4 near;
 
-	mat4 view;
-	mat4 proj;
 	vec4 camPosAndZNear;
 	uvec2 hiZ;
+
+	int padding0;
+	int padding1;
 };
 layout (binding = 10, std430) readonly buffer ViewBuffer
 {
@@ -254,8 +258,9 @@ void main()
 		views[viewId].near,
 	};
 
-	bool isVisible = sphereIsOnViewFrustum(clusters[clusterId].boundingSphere, transforms[clusters[clusterId].transformIndex],
-		viewFrustum);
+	bool isVisible = sphereIsOnViewFrustum(clusters[clusterId].boundingSphere,
+		transforms[clusters[clusterId].transformIndex], viewFrustum);
+		//isVisible = true;
 
 	mat4 viewMat        = views[viewId].view;
 	mat4 proj           = views[viewId].proj;

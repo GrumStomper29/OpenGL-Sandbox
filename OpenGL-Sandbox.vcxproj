@@ -284,6 +284,8 @@
     <None Include="src\shaders\depth_downsample.comp" />
     <None Include="src\shaders\lighting.frag" />
     <None Include="src\shaders\occluder_batch.comp" />
+    <None Include="src\shaders\shadow.frag" />
+    <None Include="src\shaders\shadow.vert" />
     <None Include="src\shaders\transparent.frag" />
     <None Include="src\shaders\uber.frag" />
     <None Include="src\shaders\uber.vert" />

@@ -28,6 +28,7 @@ public:
 
 	void move(const glm::vec3& displacement);
 
+	static Camera::Frustum makeViewFrustum(const glm::mat4& mat);
 	Frustum getViewFrustum(const glm::mat4& proj);
 
 	glm::mat4 getViewMatrix();

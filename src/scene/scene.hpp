@@ -40,12 +40,23 @@ public:
 
 	struct View
 	{
-		Camera::Frustum viewFrustum{};
-
 		glm::mat4 view{ 1.0f };
 		glm::mat4 proj{ 1.0f };
+
+		glm::vec4 top{};
+		glm::vec4 bottom{};
+
+		glm::vec4 right{};
+		glm::vec4 left{};
+
+		glm::vec4 far{};
+		glm::vec4 near{};
+
 		glm::vec4 camPosAndZNear{};
 		GLuint64 hiZ{};
+
+		int padding0{};
+		int padding1{};
 	};
 
 	SceneObject() = default;

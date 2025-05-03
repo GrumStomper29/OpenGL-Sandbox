@@ -155,13 +155,14 @@ int main()
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
-    sceneObject.mShaderPrograms["uber"] = { "../../src/shaders/uber.vert", "../../src/shaders/uber.frag" };
-    sceneObject.mShaderPrograms["transparent"] = { "../../src/shaders/uber.vert", "../../src/shaders/transparent.frag" };
-    sceneObject.mShaderPrograms["comp"] = { "../../src/shaders/comp.vert", "../../src/shaders/comp.frag" };
-    sceneObject.mShaderPrograms["lighting"] = { "../../src/shaders/comp.vert", "../../src/shaders/lighting.frag" };
-    sceneObject.mShaderPrograms["occluder_batch"] = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
-    sceneObject.mShaderPrograms["cluster_batch"] = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
+    sceneObject.mShaderPrograms["uber"]             = { "../../src/shaders/uber.vert", "../../src/shaders/uber.frag" };
+    sceneObject.mShaderPrograms["transparent"]      = { "../../src/shaders/uber.vert", "../../src/shaders/transparent.frag" };
+    sceneObject.mShaderPrograms["comp"]             = { "../../src/shaders/comp.vert", "../../src/shaders/comp.frag" };
+    sceneObject.mShaderPrograms["lighting"]         = { "../../src/shaders/comp.vert", "../../src/shaders/lighting.frag" };
+    sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
+    sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
     sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
+    sceneObject.mShaderPrograms["shadow"]           = { "../../src/shaders/shadow.vert", "../../src/shaders/shadow.frag" };
     sceneObject.linkShaderPrograms();
 
     Camera camera({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f });
@@ -340,8 +341,8 @@ int main()
         auto start{ std::chrono::system_clock::now() };
 
         const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 8.0f, 1.0f }) };
-        const glm::mat4 lightView{ glm::lookAt(lightDirection, glm::vec3{ 0.0f }, glm::vec3{ 0.0f, 1.0f, 0.0f }) };
-        const glm::mat4 lightProj{ glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -10.0f, 20.0f) };
+        const glm::mat4 lightView{ glm::lookAt(lightDirection, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
+        const glm::mat4 lightProj{ glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 10.0f, -20.0f) };
         const glm::mat4 lightProjView{ lightProj * lightView };
 
         glm::mat4 view{ camera.getViewMatrix() };
@@ -387,23 +388,39 @@ int main()
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
 
+            Camera::Frustum frustum{ camera.getViewFrustum(proj) };
+
             sceneObject.mViews[0] =
             {
-                .viewFrustum{ camera.getViewFrustum(proj) },
-
                 .view{ hiZView },
                 .proj{ proj },
+
+                .top{ frustum.top },
+                .bottom{ frustum.bottom },
+                .right{ frustum.right },
+                .left{ frustum.left },
+                .far{ frustum.far },
+                .near{ frustum.near },
+
                 .camPosAndZNear{ camera.mPos, camera.mZNear },
                 .hiZ{ hiZTexHandle }
             };
-            sceneObject.mViews[1] = 
-            {
-            .viewFrustum{ camera.getViewFrustum(proj) },
 
-            .view{ view },
-            .proj{ proj },
-            .camPosAndZNear{ camera.mPos, camera.mZNear },
-            .hiZ{ shadowHiZHandle }
+            frustum = Camera::makeViewFrustum(lightProj * lightView);
+            sceneObject.mViews[1] =
+            {
+                .view{ lightView },
+                .proj{ lightProj },
+
+                .top{ frustum.top },
+                .bottom{ frustum.bottom },
+                .right{ frustum.right },
+                .left{ frustum.left },
+                .far{ frustum.far },
+                .near{ frustum.near },
+
+                .camPosAndZNear{ glm::vec3{ 0.0f }, 10.0f },
+                .hiZ{ shadowHiZHandle }
             };
             
             if (updateViewFrustum)
@@ -465,6 +482,14 @@ int main()
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(0 * sizeof(SceneObject::IndirectDraw)));
 
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+
+            glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightProjView));
+
             glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
             glViewport(0, 0, shadowMapLength, shadowMapLength);
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -509,7 +534,7 @@ int main()
             {
                 glFinish();
             }
-
+            glFinish();
             {
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
 
@@ -540,6 +565,7 @@ int main()
                     glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
                 }
             }
+            glFinish();
 
             // todo: cleanup glViewport, glEnable
             glViewport(0, 0, screenWidth, screenHeight);
@@ -607,6 +633,21 @@ int main()
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
+            glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightProjView));
+
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+            glViewport(0, 0, shadowMapLength, shadowMapLength);
+            //glClear(GL_DEPTH_BUFFER_BIT);
+
+            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
+
+            glViewport(0, 0, screenWidth, screenHeight);
+
             glDepthMask(GL_FALSE);
             glEnable(GL_BLEND);
             glBlendFunci(0, GL_ONE, GL_ONE);
@@ -649,7 +690,7 @@ int main()
             glBindTextureUnit(1, normalTexture);
 
             // temp
-            glBindTextureUnit(2, hiZTexture);
+            glBindTextureUnit(2, shadowMap);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "hiZLevel") };
             glUniform1i(loc, hiZDisplayLevel);
 

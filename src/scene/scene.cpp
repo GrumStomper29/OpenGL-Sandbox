@@ -103,11 +103,11 @@ void SceneObject::initGlMemory()
 		glNamedBufferSubData(mIbo, indexOffset * sizeof(std::uint32_t),
 			model.mIndices.size() * sizeof(std::uint32_t), model.mIndices.data());
 
-		materialOffset += model.mMaterials.size();
+		materialOffset  += model.mMaterials.size();
 		transformOffset += model.mGlobalTransforms.size();
-		clusterOffset += model.mClusters.size();
-		vertexOffset += model.mVertices.size();
-		indexOffset += model.mIndices.size();
+		clusterOffset   += model.mClusters.size();
+		vertexOffset    += model.mVertices.size();
+		indexOffset     += model.mIndices.size();
 	}
 
 	glCreateVertexArrays(1, &mVao);

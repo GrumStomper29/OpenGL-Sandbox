@@ -384,6 +384,11 @@ int main()
             void* map{};
 
             std::vector<SceneObject::IndirectDraw> indirectDraws(sceneObject.mViewCount);
+            for (int i{ 0 }; i < indirectDraws.size(); ++i)
+            {
+                indirectDraws[i].firstIndex = i * sceneObject.mIndexCount;
+            }
+
             map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
@@ -496,13 +501,15 @@ int main()
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
 
-            if (updateViewFrustum)
             {
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
 
-                glCopyImageSubData(depthTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
-                                    hiZTexture,   GL_TEXTURE_2D, 0, 0, 0, 0,
-                                    screenWidth, screenHeight, 1);
+                if (updateViewFrustum)
+                {
+                    glCopyImageSubData(depthTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
+                        hiZTexture, GL_TEXTURE_2D, 0, 0, 0, 0,
+                        screenWidth, screenHeight, 1);
+                }
 
                 GLsync occluderDrawFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -530,21 +537,10 @@ int main()
                     glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
                 }
             }
-            else
             {
-                glFinish();
-            }
-            glFinish();
-            {
-                glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
-
                 glCopyImageSubData(shadowMap, GL_TEXTURE_2D, 0, 0, 0, 0,
                     shadowHiZ, GL_TEXTURE_2D, 0, 0, 0, 0,
                     shadowMapLength, shadowMapLength, 1);
-
-                GLsync occluderDrawFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
-
-                glUseProgram(sceneObject.mShaderPrograms.at("depth_downsample").program);
 
                 int hiZWidth{ shadowMapLength };
                 int hiZHeight{ shadowMapLength };
@@ -565,10 +561,6 @@ int main()
                     glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
                 }
             }
-            glFinish();
-
-            // todo: cleanup glViewport, glEnable
-            glViewport(0, 0, screenWidth, screenHeight);
             
             map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
@@ -603,17 +595,8 @@ int main()
 
             GLsync clusterBatchFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
-            glEnable(GL_DEPTH_TEST);
-            glDepthFunc(GL_GREATER);
-            glDepthMask(GL_TRUE);
-            glDisable(GL_BLEND);
-
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
             glViewport(0, 0, screenWidth, screenHeight);
-
-            glBindVertexArray(sceneObject.mVao);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
@@ -642,7 +625,6 @@ int main()
 
             glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
             glViewport(0, 0, shadowMapLength, shadowMapLength);
-            //glClear(GL_DEPTH_BUFFER_BIT);
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
 
@@ -705,8 +687,6 @@ int main()
 
             glBindTextureUnit(0, accumTexture);
             glBindTextureUnit(1, revealTexture);
-
-            glBindVertexArray(screenQuadVAO);
 
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }

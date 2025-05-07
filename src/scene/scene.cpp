@@ -117,18 +117,12 @@ void SceneObject::initGlMemory()
 	glNamedBufferStorage(mWriteIbo, mIndexCount * mViewCount * sizeof(GLuint), nullptr, GL_NONE);
 
 	IndirectDraw indirectDraw{};
-	/*
-	glCreateBuffers(1, &mIndirectDrawBuffer);
-	glNamedBufferStorage(mIndirectDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
-	*/
+	
 	glVertexArrayElementBuffer(mVao, mWriteIbo);
 
 	glCreateBuffers(1, &mWriteBlendIbo);
 	glNamedBufferStorage(mWriteBlendIbo, mBlendIndexCount * mViewCount * sizeof(GLuint), nullptr, GL_NONE);
-	/*
-	glCreateBuffers(1, &mIndirectBlendDrawBuffer);
-	glNamedBufferStorage(mIndirectBlendDrawBuffer, sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
-	*/
+	
 	glCreateBuffers(1, &mIndirectDrawBuffers);
 	glCreateBuffers(1, &mIndirectBlendDrawBuffers);
 	glNamedBufferStorage(mIndirectDrawBuffers,      mViewCount * sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);

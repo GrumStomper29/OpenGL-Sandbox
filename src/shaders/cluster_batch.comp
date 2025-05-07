@@ -226,7 +226,7 @@ float sampleHiZ(ivec2 coords, int level, uvec2 hiZ)
 
 
 
-// per cluster
+// Per cluster
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
 void main()
 {
@@ -260,7 +260,6 @@ void main()
 
 	bool isVisible = sphereIsOnViewFrustum(clusters[clusterId].boundingSphere,
 		transforms[clusters[clusterId].transformIndex], viewFrustum);
-		//isVisible = true;
 
 	mat4 viewMat        = views[viewId].view;
 	mat4 proj           = views[viewId].proj;

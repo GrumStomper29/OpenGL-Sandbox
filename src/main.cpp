@@ -21,7 +21,8 @@
 
 #include "meshoptimizer/meshoptimizer.h"
 
-#include <cmath> // for cbrt and ceil
+#include <array>
+#include <cmath> // for cbrt, floor, and ceil
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -87,6 +88,84 @@ glm::mat4 infiniteReversePerspective(float fovY, float aspect, float zNear)
         0.0f, f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, -1.0f,
         0.0f, 0.0f, zNear, 0.0f);
+}
+
+
+
+std::array<glm::vec3, 8> getWorldSpaceFrustumCorners(const glm::mat4& proj, const glm::mat4& view)
+{
+    std::array<glm::vec3, 8> corners
+    {
+        glm::vec3{ -1.0f,  1.0f, -1.0f },
+        glm::vec3{  1.0f,  1.0f, -1.0f },
+        glm::vec3{  1.0f, -1.0f, -1.0f },
+        glm::vec3{ -1.0f, -1.0f, -1.0f },
+        glm::vec3{ -1.0f,  1.0f,  1.0f },
+        glm::vec3{  1.0f,  1.0f,  1.0f },
+        glm::vec3{  1.0f, -1.0f,  1.0f },
+        glm::vec3{ -1.0f, -1.0f,  1.0f },
+    };
+
+    const auto inv{ glm::inverse(proj * view) };
+
+    for (auto& corner : corners)
+    {
+        glm::vec4 corner4{ corner, 1.0f };
+        corner4 = inv * corner4;
+        corner = glm::vec3{ corner4 / corner4.w };
+    }
+
+    return corners;
+}
+
+glm::vec3 getFrustumCenterFromCorners(const std::array<glm::vec3, 8>& corners)
+{
+    glm::vec3 center{ 0.0f };
+
+    for (const auto corner : corners)
+    {
+        center += corner;
+    }
+
+    return center / 8.0f;
+}
+
+struct ViewProj
+{
+    glm::mat4 view{};
+    glm::mat4 proj{};
+};
+
+ViewProj calculateLightMatricesForCascade(const glm::mat4 cascadeProj, const glm::mat4& cascadeView,
+    const glm::vec3& lightDir, int shadowMapLength)
+{
+    auto frustumCorners{ getWorldSpaceFrustumCorners(cascadeProj, cascadeView) };
+    auto frustumCenter{ getFrustumCenterFromCorners(frustumCorners) };
+
+    float radius{ 0.5f * glm::length((frustumCorners[0] - frustumCorners[6])) };
+
+    float texelsPerUnit{ static_cast<float>(shadowMapLength) / (2.0f * radius) };
+
+    glm::mat4 scalar{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ texelsPerUnit }) };
+
+    glm::mat4 lookAt{ glm::lookAt(lightDir, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
+    lookAt = scalar * lookAt;
+    glm::mat4 lookAtInv{ glm::inverse(lookAt) };
+
+    // Prevents texel snapping
+    frustumCenter = lookAt * glm::vec4{ frustumCenter, 1.0f };
+    frustumCenter.x = std::floor(frustumCenter.x);
+    frustumCenter.y = std::floor(frustumCenter.y);
+    frustumCenter = lookAtInv * glm::vec4{ frustumCenter, 1.0f };
+
+    glm::vec3 eye{ frustumCenter - (2.0f * radius * lightDir) };
+
+
+    ViewProj lightViewProj{};
+    lightViewProj.view = glm::lookAt(eye, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
+    lightViewProj.proj = glm::ortho(-radius, radius, -radius, radius, 6.0f * radius, 6.0f * -radius);
+
+    return lightViewProj;
 }
 
 
@@ -346,9 +425,13 @@ int main()
         const glm::mat4 lightProjView{ lightProj * lightView };
 
         glm::mat4 view{ camera.getViewMatrix() };
-        auto proj = infiniteReversePerspective(camera.mFov, 16.0f / 9.0f, camera.mZNear);
+        auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
         auto s{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ 1.0f }) };
         auto tp{ proj * view };
+
+        glm::mat4 nearProj{ glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear, 20.0f)  };
+        glm::mat4 midProj { glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, 20.0f,         80.0f)  };
+        glm::mat4 farProj { glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, 80.0f,         400.0f) };
 
         if (updateViewFrustum)
         {

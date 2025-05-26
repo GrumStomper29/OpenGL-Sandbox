@@ -14,6 +14,7 @@
 #include "glm/gtx/string_cast.hpp"
 
 #include "glm/ext/matrix_clip_space.hpp"
+#include "glm/gtx/extended_min_max.hpp"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
@@ -122,7 +123,7 @@ glm::vec3 getFrustumCenterFromCorners(const std::array<glm::vec3, 8>& corners)
 {
     glm::vec3 center{ 0.0f };
 
-    for (const auto corner : corners)
+    for (const auto& corner : corners)
     {
         center += corner;
     }
@@ -134,36 +135,68 @@ struct ViewProj
 {
     glm::mat4 view{};
     glm::mat4 proj{};
+    float zNear{};
+    float zFar{};
 };
 
-ViewProj calculateLightMatricesForCascade(const glm::mat4 cascadeProj, const glm::mat4& cascadeView,
+ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const glm::mat4& cascadeView,
     const glm::vec3& lightDir, int shadowMapLength)
 {
     auto frustumCorners{ getWorldSpaceFrustumCorners(cascadeProj, cascadeView) };
-    auto frustumCenter{ getFrustumCenterFromCorners(frustumCorners) };
+    auto frustumCenter { getFrustumCenterFromCorners(frustumCorners) };
 
     float radius{ 0.5f * glm::length((frustumCorners[0] - frustumCorners[6])) };
-
+    
     float texelsPerUnit{ static_cast<float>(shadowMapLength) / (2.0f * radius) };
 
-    glm::mat4 scalar{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ texelsPerUnit }) };
+    //glm::mat4 scalar{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ texelsPerUnit }) };
 
-    glm::mat4 lookAt{ glm::lookAt(lightDir, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
-    lookAt = scalar * lookAt;
-    glm::mat4 lookAtInv{ glm::inverse(lookAt) };
+    //glm::mat4 lookAt{ glm::lookAt(lightDir, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
+    //lookAt = scalar * lookAt;
+    //glm::mat4 lookAtInv{ glm::inverse(lookAt) };
 
     // Prevents texel snapping
+    /*
     frustumCenter = lookAt * glm::vec4{ frustumCenter, 1.0f };
     frustumCenter.x = std::floor(frustumCenter.x);
     frustumCenter.y = std::floor(frustumCenter.y);
     frustumCenter = lookAtInv * glm::vec4{ frustumCenter, 1.0f };
-
-    glm::vec3 eye{ frustumCenter - (2.0f * radius * lightDir) };
+    */
+    //glm::vec3 eye{ frustumCenter - (2.0f * radius * lightDir) };
 
 
     ViewProj lightViewProj{};
-    lightViewProj.view = glm::lookAt(eye, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
-    lightViewProj.proj = glm::ortho(-radius, radius, -radius, radius, 6.0f * radius, 6.0f * -radius);
+    //lightViewProj.view = glm::lookAt(eye, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
+    lightViewProj.view = glm::lookAt(frustumCenter + lightDir, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
+    // zNear and zFar swapped for reverse-Z depth
+    // vals start at 6
+
+    glm::vec3 min{ std::numeric_limits<float>::max() };
+    glm::vec3 max{ std::numeric_limits<float>::min() };
+    for (const auto& corner : frustumCorners)
+    {
+        const glm::vec3 trf{ lightViewProj.view * glm::vec4{ corner, 1.0f } };
+        min = glm::min(min, trf);
+        max = glm::max(max, trf);
+    }
+
+    constexpr float zMult{ 1.0f };
+    //min.z = min.z < 0.0f ? min.z * zMult : min.z / zMult;
+    //max.z = max.z < 0.0f ? max.z / zMult : max.z * zMult;
+    // better:
+    //min.z = min.z < 0.0f ? min.z / zMult : min.z * zMult;
+    //max.z = max.z < 0.0f ? max.z * zMult : max.z / zMult;
+
+    //max.z -= 50.0f;
+    //min.z += 50.0f;
+
+    lightViewProj.proj = glm::orthoZO(min.x, max.x, min.y, max.y, max.z, min.z);
+    lightViewProj.zNear = max.z;
+    lightViewProj.zFar = min.z;
+
+    //lightViewProj.proj = glm::orthoZO(-radius, radius, -radius, radius, radius, -radius);
+    //lightViewProj.zNear = radius;
+    //lightViewProj.zFar = -radius;
 
     return lightViewProj;
 }
@@ -221,7 +254,7 @@ int main()
 
 
     SceneObject sceneObject{};
-    sceneObject.mViewCount = 2;
+    sceneObject.mViewCount = 4;
 
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
@@ -247,7 +280,8 @@ int main()
     Camera camera({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f });
 
 
-    float screenQuadVerts[] = {
+    float screenQuadVerts[] = 
+    {
         // Position				// UV
         -1.0f, -1.0f, 0.0f,		0.0f, 0.0f,
          1.0f, -1.0f, 0.0f,		1.0f, 0.0f,
@@ -320,22 +354,42 @@ int main()
     GLuint64 hiZTexHandle{ glGetTextureHandleARB(hiZTexture) };
     glMakeTextureHandleResidentARB(hiZTexHandle);
 
-    constexpr int shadowMapLength{ 1024 };
+    constexpr int shadowMapLength{ 2048 };
 
-    GLuint shadowFBO{};
-    glCreateFramebuffers(1, &shadowFBO);
+    GLuint shadowFBOs[3]{};
+    glCreateFramebuffers(3, &shadowFBOs[0]);
 
     GLuint shadowMap{};
-    glCreateTextures(GL_TEXTURE_2D, 1, &shadowMap);
-    glTextureStorage2D(shadowMap, 1, GL_DEPTH_COMPONENT32F, shadowMapLength, shadowMapLength);
+    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowMap);
+    glTextureStorage3D(shadowMap, 1, GL_DEPTH_COMPONENT32F, shadowMapLength, shadowMapLength, 3);
 
-    glNamedFramebufferTexture(shadowFBO, GL_DEPTH_ATTACHMENT, shadowMap, 0);
+    for (int i{ 0 }; i < 3; ++i)
+    {
+        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_DEPTH_ATTACHMENT, shadowMap, 0, i);
+        //glNamedFramebufferTextureLayer()
+    }
 
-    GLuint shadowHiZ{};
-    glCreateTextures(GL_TEXTURE_2D, 1, &shadowHiZ);
-    glTextureStorage2D(shadowHiZ, std::floor(std::log2(shadowMapLength)) + 1, GL_R32F, shadowMapLength, shadowMapLength);
-    GLuint64 shadowHiZHandle{ glGetTextureHandleARB(shadowHiZ) };
-    glMakeTextureHandleResidentARB(shadowHiZHandle);
+    //glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER)
+    if (glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
+    GLuint shadowHiZs[3]{};
+    glCreateTextures(GL_TEXTURE_2D, 3, &shadowHiZs[0]);
+    GLuint64 shadowHiZHandles[3]{};
+    for (int i{ 0 }; i < 3; ++i)
+    {
+        glTextureStorage2D(shadowHiZs[i], std::floor(std::log2(shadowMapLength)) + 1, GL_R32F, shadowMapLength, shadowMapLength);
+        shadowHiZHandles[i] = glGetTextureHandleARB(shadowHiZs[i]);
+        glMakeTextureHandleResidentARB(shadowHiZHandles[i]);
+    }
+
+    GLuint lightCascadeMatrixBuffer{};
+    glCreateBuffers(1, &lightCascadeMatrixBuffer);
+    glNamedBufferStorage(lightCascadeMatrixBuffer, 3 * sizeof(glm::mat4), nullptr, GL_MAP_WRITE_BIT);
+
+    //glTextureStorage2D(shadowHiZ, std::floor(std::log2(shadowMapLength)) + 1, GL_R32F, shadowMapLength, shadowMapLength);
+    //GLuint64 shadowHiZHandle{ glGetTextureHandleARB(shadowHiZ) };
+    //glMakeTextureHandleResidentARB(shadowHiZHandle);
 
     double lastTime{ SDL_GetTicks64() * 0.001 };
 
@@ -420,18 +474,39 @@ int main()
         auto start{ std::chrono::system_clock::now() };
 
         const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 8.0f, 1.0f }) };
-        const glm::mat4 lightView{ glm::lookAt(lightDirection, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
-        const glm::mat4 lightProj{ glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 10.0f, -20.0f) };
-        const glm::mat4 lightProjView{ lightProj * lightView };
+        //const glm::mat4 lightView{ glm::lookAt(lightDirection, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
+        //const glm::mat4 lightProj{ glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 10.0f, -20.0f) };
+        //const glm::mat4 lightProjView{ lightProj * lightView };
 
         glm::mat4 view{ camera.getViewMatrix() };
         auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
-        auto s{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ 1.0f }) };
+        //auto s{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ 1.0f }) };
         auto tp{ proj * view };
 
         glm::mat4 nearProj{ glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear, 20.0f)  };
         glm::mat4 midProj { glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, 20.0f,         80.0f)  };
         glm::mat4 farProj { glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, 80.0f,         400.0f) };
+
+        ViewProj lightCascadeMatrices[3]{};
+        lightCascadeMatrices[0] = calculateLightMatricesForCascade(nearProj, view, lightDirection, shadowMapLength);
+        lightCascadeMatrices[1] = calculateLightMatricesForCascade(midProj,  view, lightDirection, shadowMapLength);
+        lightCascadeMatrices[2] = calculateLightMatricesForCascade(farProj,  view, lightDirection, shadowMapLength);
+
+        void* map{};
+        map = glMapNamedBuffer(lightCascadeMatrixBuffer, GL_WRITE_ONLY);
+        {
+            glm::mat4 lightViewProj[3]{};
+            for (int i{ 0 }; i < 3; ++i)
+            {
+                lightViewProj[i] = lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view;
+            }
+
+            std::memcpy(map, &lightViewProj[0], 3 * sizeof(glm::mat4));
+        }
+        glUnmapNamedBuffer(lightCascadeMatrixBuffer);
+        //view = lightCascadeMatrices[0].view;
+        //proj = lightCascadeMatrices[0].proj;
+        //tp = proj * view;
 
         if (updateViewFrustum)
         {
@@ -464,7 +539,7 @@ int main()
         ImGui::End();
 
         {
-            void* map{};
+            //void* map{};
 
             std::vector<SceneObject::IndirectDraw> indirectDraws(sceneObject.mViewCount);
             for (int i{ 0 }; i < indirectDraws.size(); ++i)
@@ -477,6 +552,7 @@ int main()
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
 
             Camera::Frustum frustum{ camera.getViewFrustum(proj) };
+            frustum = Camera::makeViewFrustum(proj * view);
 
             sceneObject.mViews[0] =
             {
@@ -490,11 +566,32 @@ int main()
                 .far{ frustum.far },
                 .near{ frustum.near },
 
-                .camPosAndZNear{ camera.mPos, camera.mZNear },
+                //.camPosAndZNear{ camera.mPos, camera.mZNear }, // BIG TEMP FIX THIS ASAP
+                .camPosAndZNear{ camera.mPos, lightCascadeMatrices[0].zNear },
                 .hiZ{ hiZTexHandle }
             };
 
-            frustum = Camera::makeViewFrustum(lightProj * lightView);
+            for (int i{ 0 }; i < 3; ++i)
+            {
+                frustum = Camera::makeViewFrustum(lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view);
+                sceneObject.mViews[i + 1] =
+                {
+                    .view{ lightCascadeMatrices[i].view },
+                    .proj{ lightCascadeMatrices[i].proj },
+
+                    .top   { frustum.top },
+                    .bottom{ frustum.bottom },
+                    .right { frustum.right },
+                    .left  { frustum.left },
+                    .far   { frustum.far },
+                    .near  { frustum.near },
+
+                    .camPosAndZNear{ glm::vec3{ 0.0f }, lightCascadeMatrices[i].zNear },
+                    .hiZ{ shadowHiZHandles[i] }
+                };
+            }
+            /*
+            frustum = Camera::makeViewFrustum(lightNearMatrices.proj * lightNearMatrices.view);
             sceneObject.mViews[1] =
             {
                 .view{ lightView },
@@ -510,6 +607,8 @@ int main()
                 .camPosAndZNear{ glm::vec3{ 0.0f }, 10.0f },
                 .hiZ{ shadowHiZHandle }
             };
+            */
+            
             
             if (updateViewFrustum)
             {
@@ -574,16 +673,33 @@ int main()
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
 
+            glViewport(0, 0, shadowMapLength, shadowMapLength);
+
             glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightProjView));
 
-            glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+            glEnable(GL_DEPTH_CLAMP);
+
+            for (int i{ 0 }; i < 3; ++i)
+            {
+                glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[i].proj* lightCascadeMatrices[i].view));
+
+                glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
+                glClear(GL_DEPTH_BUFFER_BIT);
+
+                glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+            }
+
+            glDisable(GL_DEPTH_CLAMP);
+            /*
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[0].proj * lightCascadeMatrices[0].view));
+
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[0]);
             glViewport(0, 0, shadowMapLength, shadowMapLength);
             glClear(GL_DEPTH_BUFFER_BIT);
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
-
+            */
             {
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
 
@@ -620,9 +736,11 @@ int main()
                     glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
                 }
             }
+
+            for (int n{ 0 }; n < 3; ++n)
             {
-                glCopyImageSubData(shadowMap, GL_TEXTURE_2D, 0, 0, 0, 0,
-                    shadowHiZ, GL_TEXTURE_2D, 0, 0, 0, 0,
+                glCopyImageSubData(shadowMap, GL_TEXTURE_2D_ARRAY, 0, 0, 0, n,
+                    shadowHiZs[n], GL_TEXTURE_2D, 0, 0, 0, 0,
                     shadowMapLength, shadowMapLength, 1);
 
                 int hiZWidth{ shadowMapLength };
@@ -630,8 +748,8 @@ int main()
 
                 for (int i{ 0 }; i < std::floor(std::log2(shadowMapLength)); ++i)
                 {
-                    glBindImageTexture(0, shadowHiZ, i, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
-                    glBindImageTexture(1, shadowHiZ, i + 1, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+                    glBindImageTexture(0, shadowHiZs[n], i,     GL_FALSE, 0, GL_READ_ONLY,  GL_R32F);
+                    glBindImageTexture(1, shadowHiZs[n], i + 1, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
                     hiZWidth /= 2;
                     hiZWidth = hiZWidth > 0 ? hiZWidth : 1;
@@ -699,17 +817,26 @@ int main()
 
             glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
+            glViewport(0, 0, shadowMapLength, shadowMapLength);
+
             glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightProjView));
 
-            glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-            glViewport(0, 0, shadowMapLength, shadowMapLength);
+            glEnable(GL_DEPTH_CLAMP);
 
-            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(1 * sizeof(SceneObject::IndirectDraw)));
+            for (int i{ 0 }; i < 3; ++i)
+            {
+                glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view));
+
+                glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
+
+                glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+            }
+
+            glDisable(GL_DEPTH_CLAMP);
 
             glViewport(0, 0, screenWidth, screenHeight);
 
@@ -753,11 +880,25 @@ int main()
 
             glBindTextureUnit(0, opaqueTexture);
             glBindTextureUnit(1, normalTexture);
+            glBindTextureUnit(2, depthTexture);
+            glBindTextureUnit(4, shadowMap);
+
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lightCascadeMatrixBuffer);
 
             // temp
-            glBindTextureUnit(2, shadowMap);
+            glBindTextureUnit(3, shadowMap);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "hiZLevel") };
             glUniform1i(loc, hiZDisplayLevel);
+
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "nearZ") };
+            glUniform1f(loc, lightCascadeMatrices[hiZDisplayLevel].zNear);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "farZ") };
+            glUniform1i(loc, lightCascadeMatrices[hiZDisplayLevel].zFar);
+
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "invViewProj") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::inverse(tp)));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "view") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
 
             glBindVertexArray(screenQuadVAO);
 
@@ -786,7 +927,7 @@ int main()
 
     glDeleteFramebuffers(1, &opaqueFBO);
     glDeleteFramebuffers(1, &transparentFBO);
-    glDeleteFramebuffers(1, &shadowFBO);
+    glDeleteFramebuffers(3, &shadowFBOs[0]);
     
     glDeleteTextures(1, &opaqueTexture);
     glDeleteTextures(1, &accumTexture);
@@ -794,7 +935,7 @@ int main()
     glDeleteTextures(1, &depthTexture);
     glDeleteTextures(1, &hiZTexture);
     glDeleteTextures(1, &shadowMap);
-    glDeleteTextures(1, &shadowHiZ);
+    glDeleteTextures(3, &shadowHiZs[0]);
 
 
     ImGui_ImplOpenGL3_Shutdown();

@@ -299,6 +299,8 @@ void main()
 			sphereDepth = camPosAndZNear.w / -sphereDepth;
 
 			isVisible = sphereDepth >= depth;
+			// temp, because hzb sampling doesnt yet support ortho
+			isVisible = true;
 		}
 	}
 

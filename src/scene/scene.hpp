@@ -40,6 +40,12 @@ public:
 
 	struct View
 	{
+		enum ProjType : GLuint
+		{
+			VIEW_PERSPECTIVE = 0u,
+			VIEW_ORTHO		 = 1u,
+		};
+
 		glm::mat4 view{ 1.0f };
 		glm::mat4 proj{ 1.0f };
 
@@ -49,14 +55,15 @@ public:
 		glm::vec4 right{};
 		glm::vec4 left{};
 
-		glm::vec4 far{};
+		glm::vec4 far{}; // unused
 		glm::vec4 near{};
 
 		glm::vec4 camPosAndZNear{};
 		GLuint64 hiZ{};
 
-		int padding0{};
-		int padding1{};
+		ProjType projType{ VIEW_PERSPECTIVE };
+
+		GLfloat zFar{ 0.0f };
 	};
 
 	SceneObject() = default;

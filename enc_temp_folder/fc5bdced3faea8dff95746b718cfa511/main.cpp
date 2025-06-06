@@ -140,7 +140,6 @@ struct ViewProj
     float zFar{};
 };
 
-// Heavily based on https://alextardif.com/shadowmapping.html
 ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const glm::mat4& cascadeView,
     const glm::vec3& lightDir, int shadowMapLength)
 {
@@ -156,40 +155,35 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
         max = glm::max(max, trf);
     }
 
+    //float radius{ 0.5f * glm::length((frustumCorners[5] - frustumCorners[3])) };
+    //float radius{ 0.5f * glm::distance(frustumCorners[5], frustumCorners[3]) };
     float radius{ 0.5f * glm::distance(min, max) };
     
     float texelsPerUnit{ static_cast<float>(shadowMapLength) / (2.0f * radius) };
 
     glm::mat4 scalar{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ texelsPerUnit }) };
+
     glm::mat4 lookAt{ glm::lookAt(glm::vec3{ 0.0f }, -lightDir, glm::vec3{ 0.0f, 1.0f, 0.0f })};
-    lookAt = scalar * lookAt;
-    //lookAt = lookAt * scalar; Not sure if order matters here
+    //lookAt = scalar * lookAt;
+    lookAt = lookAt * scalar;
     glm::mat4 lookAtInv{ glm::inverse(lookAt) };
 
-    // Stabilize the matrix to prevent texture shimmering
+    // Prevents texel snapping
+    //*
     frustumCenter = lookAt * glm::vec4{ frustumCenter, 1.0f };
     frustumCenter.x = std::floor(frustumCenter.x);
     frustumCenter.y = std::floor(frustumCenter.y);
     frustumCenter = lookAtInv * glm::vec4{ frustumCenter, 1.0f };
-
+    //*/
     glm::vec3 eye{ frustumCenter + (lightDir * (2.0f * radius)) };
 
 
     ViewProj lightViewProj{};
     lightViewProj.view = glm::lookAt(eye, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
-
-    // Near and far planes have swapped values for reverse-Z depth buffers
-    lightViewProj.proj = glm::orthoZO(-radius, radius, -radius, radius, 10.0f * radius, 10.0f * -radius);
-    lightViewProj.zNear = 10.0f * radius;
-    lightViewProj.zFar = 10.0f * -radius;
-
-    return lightViewProj;
-
-    /*
-    lightViewProj.view = glm::lookAt(frustumCenter + lightDir, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
+    //lightViewProj.view = glm::lookAt(frustumCenter + lightDir, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
     // zNear and zFar swapped for reverse-Z depth
     // vals start at 6
-    
+    /*
     glm::vec3 min{ std::numeric_limits<float>::max() };
     glm::vec3 max{ std::numeric_limits<float>::min() };
     for (const auto& corner : frustumCorners)
@@ -213,6 +207,12 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
     lightViewProj.zNear = max.z;
     lightViewProj.zFar = min.z;
     */
+    float m{ 1.0f };
+    lightViewProj.proj = glm::orthoZO(m * -radius, m * radius, m * -radius, m * radius, 10.0f * radius, 10.0f * -radius);
+    lightViewProj.zNear = 10.0f * radius;
+    lightViewProj.zFar = 10.0f * -radius;
+
+    return lightViewProj;
 }
 
 
@@ -380,12 +380,13 @@ int main()
     for (int i{ 0 }; i < 3; ++i)
     {
         glNamedFramebufferTextureLayer(shadowFBOs[i], GL_DEPTH_ATTACHMENT, shadowMap, 0, i);
+        //glNamedFramebufferTextureLayer()
     }
-    /*
+
     //glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER)
     if (glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
-        */
+        std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
     GLuint shadowHiZs[3]{};
     glCreateTextures(GL_TEXTURE_2D, 3, &shadowHiZs[0]);
     GLuint64 shadowHiZHandles[3]{};
@@ -399,6 +400,10 @@ int main()
     GLuint lightCascadeMatrixBuffer{};
     glCreateBuffers(1, &lightCascadeMatrixBuffer);
     glNamedBufferStorage(lightCascadeMatrixBuffer, 3 * sizeof(glm::mat4), nullptr, GL_MAP_WRITE_BIT);
+
+    //glTextureStorage2D(shadowHiZ, std::floor(std::log2(shadowMapLength)) + 1, GL_R32F, shadowMapLength, shadowMapLength);
+    //GLuint64 shadowHiZHandle{ glGetTextureHandleARB(shadowHiZ) };
+    //glMakeTextureHandleResidentARB(shadowHiZHandle);
 
     double lastTime{ SDL_GetTicks64() * 0.001 };
 
@@ -482,10 +487,14 @@ int main()
 
         auto start{ std::chrono::system_clock::now() };
 
-        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 4.0f, 1.0f }) };
+        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ 4.0f, 4.0f, 1.0f }) };
+        //const glm::mat4 lightView{ glm::lookAt(lightDirection, glm::vec3{ 0.0f }, glm::vec3{0.0f, 1.0f, 0.0f}) };
+        //const glm::mat4 lightProj{ glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 10.0f, -20.0f) };
+        //const glm::mat4 lightProjView{ lightProj * lightView };
 
         glm::mat4 view{ camera.getViewMatrix() };
         auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
+        //auto s{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ 1.0f }) };
         auto tp{ proj * view };
 
         glm::mat4 nearProj{ glm::perspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear, 9.0f)  };
@@ -496,7 +505,11 @@ int main()
         lightCascadeMatrices[0] = calculateLightMatricesForCascade(nearProj, view, lightDirection, shadowMapLength);
         lightCascadeMatrices[1] = calculateLightMatricesForCascade(midProj,  view, lightDirection, shadowMapLength);
         lightCascadeMatrices[2] = calculateLightMatricesForCascade(farProj,  view, lightDirection, shadowMapLength);
-        
+        //*
+        //view = lightCascadeMatrices[0].view;
+        //proj = lightCascadeMatrices[0].proj;
+        //tp = proj * view;
+        //*/
         void* map{};
         map = glMapNamedBuffer(lightCascadeMatrixBuffer, GL_WRITE_ONLY);
         {
@@ -509,6 +522,9 @@ int main()
             std::memcpy(map, &lightViewProj[0], 3 * sizeof(glm::mat4));
         }
         glUnmapNamedBuffer(lightCascadeMatrixBuffer);
+        //view = lightCascadeMatrices[0].view;
+        //proj = lightCascadeMatrices[0].proj;
+        //tp = proj * view;
 
         if (updateViewFrustum)
         {
@@ -521,9 +537,10 @@ int main()
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Begin("Debug");
+        ImGui::Begin("Stats");
         ImGui::Text("frametime %f ms", stats.frameTime);
         ImGui::InputText("shader program", selectedProgram, 512);
+        //ImGui::InputInt("hi-z level to display", &hiZDisplayLevel);
         if (ImGui::Button("hot reload"))
         {
             if (auto found{ sceneObject.mShaderPrograms.find(std::string{ selectedProgram }) }; found != sceneObject.mShaderPrograms.end())
@@ -540,6 +557,8 @@ int main()
         ImGui::End();
 
         {
+            //void* map{};
+
             std::vector<SceneObject::IndirectDraw> indirectDraws(sceneObject.mViewCount);
             for (int i{ 0 }; i < indirectDraws.size(); ++i)
             {
@@ -565,10 +584,14 @@ int main()
                 .far{ frustum.far },
                 .near{ frustum.near },
 
-                .camPosAndZNear{ camera.mPos, camera.mZNear },
+                .camPosAndZNear{ camera.mPos, camera.mZNear }, // BIG TEMP FIX THIS ASAP
+                //.camPosAndZNear{ camera.mPos, lightCascadeMatrices[0].zNear },
                 .hiZ{ hiZTexHandle },
 
                 .projType{ SceneObject::View::VIEW_PERSPECTIVE },
+                //.projType{ SceneObject::View::VIEW_ORTHO },
+
+                //.zFar{ lightCascadeMatrices[0].zFar },
             };
 
             for (int i{ 0 }; i < 3; ++i)
@@ -594,6 +617,25 @@ int main()
                     .zFar{ lightCascadeMatrices[i].zFar },
                 };
             }
+            /*
+            frustum = Camera::makeViewFrustum(lightNearMatrices.proj * lightNearMatrices.view);
+            sceneObject.mViews[1] =
+            {
+                .view{ lightView },
+                .proj{ lightProj },
+
+                .top{ frustum.top },
+                .bottom{ frustum.bottom },
+                .right{ frustum.right },
+                .left{ frustum.left },
+                .far{ frustum.far },
+                .near{ frustum.near },
+
+                .camPosAndZNear{ glm::vec3{ 0.0f }, 10.0f },
+                .hiZ{ shadowHiZHandle }
+            };
+            */
+            
             
             if (updateViewFrustum)
             {
@@ -664,6 +706,8 @@ int main()
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
 
             glEnable(GL_DEPTH_CLAMP);
+            glCullFace(GL_FRONT);
+            //glEnable(GL_CULL_FACE);
 
             for (int i{ 0 }; i < 3; ++i)
             {
@@ -676,6 +720,7 @@ int main()
             }
 
             glDisable(GL_DEPTH_CLAMP);
+            glDisable(GL_CULL_FACE);
             
             {
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
@@ -803,6 +848,8 @@ int main()
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
 
             glEnable(GL_DEPTH_CLAMP);
+            glCullFace(GL_FRONT);
+            //glEnable(GL_CULL_FACE);
 
             for (int i{ 0 }; i < 3; ++i)
             {
@@ -814,6 +861,7 @@ int main()
             }
 
             glDisable(GL_DEPTH_CLAMP);
+            glDisable(GL_CULL_FACE);
 
             glViewport(0, 0, screenWidth, screenHeight);
 
@@ -861,6 +909,11 @@ int main()
             glBindTextureUnit(4, shadowMap);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lightCascadeMatrixBuffer);
+
+            // temp
+            //glBindTextureUnit(3, shadowMap);
+            //loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "hiZLevel") };
+            //glUniform1i(loc, hiZDisplayLevel);
 
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "nearZ") };
             glUniform1f(loc, lightCascadeMatrices[hiZDisplayLevel].zNear);

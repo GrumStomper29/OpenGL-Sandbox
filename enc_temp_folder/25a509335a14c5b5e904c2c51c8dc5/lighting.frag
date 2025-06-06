@@ -50,7 +50,7 @@ float dither(ivec2 p)
 
 void main()
 {
-	const vec3 lightDir = normalize(const vec3(-2.0f, 4.0f, 1.0f));
+	const vec3 lightDir = normalize(const vec3(4.0f, 4.0f, 1.0f));
 
 	ivec2 coords = ivec2(gl_FragCoord.xy);
 

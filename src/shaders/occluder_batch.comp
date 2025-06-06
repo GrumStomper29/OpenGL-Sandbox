@@ -107,7 +107,7 @@ void main()
 		uint indexCount = clusters[clusterId].indexCount;
 
 		uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectDraws[viewId].count, indexCount);
-
+		
 		for (int i = 0; i < indexCount; i++)
 		{
 			// 25 bits for cluster id, 7 bits for index.

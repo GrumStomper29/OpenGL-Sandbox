@@ -273,15 +273,16 @@ int main()
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
-        { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
-        //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
+        //{ .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        {.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
-        //{ .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
+        { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
     sceneObject.mShaderPrograms["uber"]             = { "../../src/shaders/uber.vert", "../../src/shaders/uber.frag" };
+    sceneObject.mShaderPrograms["uber_meshlet"]     = { "../../src/shaders/uber.mesh", "../../src/shaders/uber.frag" };
     sceneObject.mShaderPrograms["transparent"]      = { "../../src/shaders/uber.vert", "../../src/shaders/transparent.frag" };
     sceneObject.mShaderPrograms["comp"]             = { "../../src/shaders/comp.vert", "../../src/shaders/comp.frag" };
     sceneObject.mShaderPrograms["lighting"]         = { "../../src/shaders/comp.vert", "../../src/shaders/lighting.frag" };

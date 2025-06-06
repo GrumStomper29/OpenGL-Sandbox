@@ -47,7 +47,6 @@ out VsOut
 } vsOut;
 
 uniform mat4 transform;
-//uniform mat4 model;
 uniform mat4 view;
 uniform vec3 camPos;
 
@@ -56,10 +55,8 @@ void main()
 	uint clusterId = bitfieldExtract(gl_VertexID, 7, 25);
 	vsOut.clusterId = clusterId;
 	Vertex vertex = vertices[bitfieldExtract(gl_VertexID, 0, 7) + clusters[clusterId].vertexOffset];
-	//Vertex vertex = vertices[gl_VertexID];
 
 	gl_Position = transform * transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f);
-	//gl_Position = transform * vec4(vertex.pos, 1.0f);
 
 	mat3 normalTransform = inverse(transpose(mat3(transforms[clusters[clusterId].transformIndex])));
 	vsOut.norm = normalTransform * vertex.normal;

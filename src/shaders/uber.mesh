@@ -1,0 +1,110 @@
+#version 460
+#extension GL_NV_mesh_shader : require
+
+layout (local_size_x = 1) in;
+
+layout (triangles) out;
+//layout (max_vertices = 64, max_primitives = 124) out;
+layout (max_vertices = 124 * 3, max_primitives = 124) out;
+
+out uint gl_PrimitiveCountNV;
+out uint gl_PrimitiveIndicesNV[];
+
+out gl_MeshPerVertexNV
+{
+	vec4 gl_Position;
+	/*float gl_PointSize;
+	float gl_ClipDistance[];
+	float gl_CullDistance[];*/
+} gl_MeshVerticesNV[];
+
+out Interpolant
+{
+	vec3 norm;
+	vec2 uv;
+	vec3 camPosMinusWorldVert;
+	flat uint clusterId;
+} OUT[];
+
+
+
+struct Cluster
+{
+	vec4 boundingSphere;
+
+	uint transformIndex;
+	int materialIndex;
+
+	uint indexCount;
+	uint firstIndex;
+	int vertexOffset;
+
+	uint viewId;
+	int padding1;
+	int padding2;
+};
+layout(binding = 0, std430) readonly buffer ClusterBuffer
+{
+	Cluster clusters[];
+};
+
+struct Vertex
+{
+	vec3 pos;
+	float u;
+	vec3 normal;
+	float v;
+};
+
+layout(binding = 1, std430) readonly buffer IndexBuffer
+{
+	uint indices[];
+};
+
+layout(binding = 2, std430) readonly buffer VertexBuffer
+{
+	Vertex vertices[];
+};
+
+layout(binding = 3, std430) readonly buffer TransformBuffer
+{
+	mat4 transforms[];
+};
+
+
+
+uniform mat4 transform;
+uniform mat4 view;
+uniform vec3 camPos;
+
+
+
+void main()
+{
+	uint clusterId = gl_GlobalInvocationID.x;
+
+
+
+	// Lots of vertex duplication here
+	for (int i{ 0 }; i < clusters[clusterId].indexCount; ++i)
+	{
+		uint vertexIndex = clusters[clusterId].vertexOffset + indices[clusters[clusterId].firstIndex + i];
+		Vertex vertex = vertices[vertexIndex];
+
+		gl_MeshVerticesNV[i].gl_Position = transform * transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f);
+
+		mat3 normalTransform = inverse(transpose(mat3(transforms[clusters[clusterId].transformIndex])));
+		OUT[i].norm = normalTransform * vertex.normal;
+
+		OUT[i].uv.x = vertex.u;
+		OUT[i].uv.y = vertex.v;
+
+		OUT[i].camPosMinusWorldVert = camPos - (transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f)).xyz;
+	}
+
+	for (int i{ 0 }; i < clusters[clusterId].indexCount; ++i)
+	{
+		gl_PrimitiveIndicesNV[i] = indices[clusters[clusterId].firstIndex + i]
+	}
+	gl_PrimitiveCountNV = clusters[clusterId].indexCount / 3;
+}

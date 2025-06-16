@@ -6,12 +6,13 @@ const uint VIEW_ORTHO		= 1u;
 
 uniform uint clusterCount;
 uniform uint viewIndexCount;
+uniform uint clustersPerView;
 
 layout(binding = 0, std430) readonly buffer IndexBuffer
 {
 	uint indices[];
 };
-
+/*
 struct IndirectDraw
 {
 	uint count;
@@ -20,10 +21,19 @@ struct IndirectDraw
 	int baseVertex;
 	uint baseInstance;
 };
-
 layout (binding = 1, std430) buffer IndirectDrawBuffers
 {
 	IndirectDraw indirectDraws[];
+};
+*/
+struct IndirectMeshDraw
+{
+	uint count;
+	uint first;
+};
+layout (binding = 1, std430) buffer IndirectMeshDrawBuffer
+{
+	IndirectMeshDraw indirectMeshDraws[];
 };
 
 struct Cluster
@@ -46,13 +56,17 @@ layout (binding = 2, std430) readonly buffer ClusterBuffer
 {
 	Cluster clusters[];
 };
-
+/*
 layout (binding = 3, std430) buffer IndexWriteBuffer
 {
 	uint writeIndices[];
 };
-
-
+*/
+layout (binding = 3, std430) buffer ClusterBatchBuffer
+{
+	uint writeClusters[];
+};
+/*
 layout (binding = 4, std430) buffer IndirectBlendDrawBuffers
 {
 	IndirectDraw indirectBlendDraws[];
@@ -62,7 +76,7 @@ layout (binding = 5, std430) buffer BlendIndexWriteBuffer
 {
 	uint writeBlendIndices[];
 };
-
+*/
 struct Material
 {
 	vec4 colorFactor;
@@ -334,11 +348,12 @@ void main()
 	}
 	if (!isVisible) return;
 
-	uint indexCount = clusters[clusterId].indexCount;
+	//uint indexCount = clusters[clusterId].indexCount;
 
 	// If cluster wasn't visible last frame, or cluster is alpha blend, batch it here
 	if (materials[clusters[clusterId].materialIndex].alphaBlend)
 	{
+	/*
 		uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectBlendDraws[viewId].count, indexCount);
 
 		for (int i = 0; i < indexCount; i++)
@@ -347,11 +362,13 @@ void main()
 			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
 			writeBlendIndices[bufferStart + i] = index;
 		}
+		*/
 	}
 	else
 	{
 		if (!clusterWasVisible)
 		{
+		/*
 			uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectDraws[viewId].count, indexCount);
 			
 			for (int i = 0; i < clusters[clusterId].indexCount; i++)
@@ -359,6 +376,16 @@ void main()
 				// 25 bits for cluster id, 7 bits for index
 				uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
 				writeIndices[bufferStart + i] = index;
+			}*/
+
+			uint index = viewId * clustersPerView + atomicAdd(indirectMeshDraws[viewId].count, 1);
+			writeClusters[index] = clusterId;
+			
+			//for (int i = 0; i < clusters[clusterId].indexCount; i++)
+			{
+				// 25 bits for cluster id, 7 bits for index
+				//uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
+				//writeIndices[bufferStart + i] = index;
 			}
 		}
 	}

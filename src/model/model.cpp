@@ -164,6 +164,8 @@ void ModelObject::buildPrimitiveUniformsFromNodeAndChildren(const Node& node, co
 
 					newCluster.viewId = i;
 
+					newCluster.vertexCount = cluster.vertexCount;
+
 					mClusters.push_back(std::move(newCluster));
 				}
 			}
@@ -321,6 +323,8 @@ void ModelObject::loadMeshes(fastgltf::Expected<fastgltf::Asset>& asset, GLint s
 					primitiveVertices.size(), sizeof(Vertex)) };
 
 				newPrimitive.meshlets[i].boundingSphere = { meshletBounds.center[0], meshletBounds.center[1], meshletBounds.center[2], meshletBounds.radius };
+
+				newPrimitive.meshlets[i].vertexCount = meshlets[i].vertex_count;
 			}
 
 			newPrimitive.localMaterialIndex = asset->meshes[i].primitives[n].materialIndex.value_or(-1);

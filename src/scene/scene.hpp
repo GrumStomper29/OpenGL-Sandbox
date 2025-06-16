@@ -23,6 +23,7 @@ public:
 	struct ShaderProgram
 	{
 		std::string vsPath{};
+		std::string msPath{};
 		std::string fsPath{};
 		std::string computePath{};
 
@@ -36,6 +37,12 @@ public:
 		GLuint firstIndex{ 0 };
 		GLint  baseVertex{ 0 };
 		GLuint baseInstance{ 0 };
+	};
+
+	struct IndirectMeshDraw
+	{
+		GLuint count{ 0 };
+		GLuint first{ 0 };
 	};
 
 	struct View
@@ -104,6 +111,9 @@ public:
 
 	GLuint mIndirectDrawBuffers{};
 	GLuint mIndirectBlendDrawBuffers{};
+
+	GLuint mClusterBatchBuffer{};
+	GLuint mClusterIndirectDrawBuffer{};
 
 	GLuint mVisibilityBitmaskSsbo{};
 

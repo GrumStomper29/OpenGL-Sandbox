@@ -60,6 +60,8 @@ public:
 		GLint triangleCount{};
 		GLuint firstIndex{};
 		GLint sceneVertexOffset{};
+
+		GLuint vertexCount{};
 	};
 
 	// Clusters are instances of meshlets.
@@ -76,8 +78,8 @@ public:
 
 		GLuint viewId{};
 
-		GLint padding1{};
-		GLint padding2{};
+		GLuint vertexCount{};
+		GLuint padding2{};
 	};
 
 	struct Primitive

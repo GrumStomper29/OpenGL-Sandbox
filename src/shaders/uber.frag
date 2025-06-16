@@ -1,7 +1,7 @@
 #version 430 core
 #extension GL_ARB_bindless_texture : require
 
-in VsOut
+in Interpolant
 {
 	vec3 norm;
 	vec2 uv;
@@ -21,7 +21,9 @@ struct Cluster
 	int vertexOffset;
 
 	uint viewId;
-	int padding1;
+
+	uint vertexCount;
+
 	int padding2;
 };
 layout(binding = 0, std430) readonly buffer ClusterBuffer
@@ -113,3 +115,12 @@ void main()
 		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv), 1.0f);
 	}
 }
+/*
+out vec4 outColor;
+out vec4 outNorm;
+void main()
+{
+	outColor = vec4(1.0f);
+	outNorm = vec4(0.0f, 0.0f, 1.0f, 0.0f);
+}
+*/

@@ -273,23 +273,24 @@ int main()
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
-        //{ .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
-        {.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
+        { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
         { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
-    sceneObject.mShaderPrograms["uber"]             = { "../../src/shaders/uber.vert", "../../src/shaders/uber.frag" };
-    sceneObject.mShaderPrograms["uber_meshlet"]     = { "../../src/shaders/uber.mesh", "../../src/shaders/uber.frag" };
-    sceneObject.mShaderPrograms["transparent"]      = { "../../src/shaders/uber.vert", "../../src/shaders/transparent.frag" };
-    sceneObject.mShaderPrograms["comp"]             = { "../../src/shaders/comp.vert", "../../src/shaders/comp.frag" };
-    sceneObject.mShaderPrograms["lighting"]         = { "../../src/shaders/comp.vert", "../../src/shaders/lighting.frag" };
+    //sceneObject.mShaderPrograms["uber"]             = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/uber.frag" } };
+    sceneObject.mShaderPrograms["uber_mesh"]     = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
+    sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
+    sceneObject.mShaderPrograms["comp"]             = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
+    sceneObject.mShaderPrograms["lighting"]         = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
     sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
     sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
     sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
-    sceneObject.mShaderPrograms["shadow"]           = { "../../src/shaders/shadow.vert", "../../src/shaders/shadow.frag" };
+    //sceneObject.mShaderPrograms["shadow"]           = { .vsPath{ "../../src/shaders/shadow.vert" }, .fsPath{ "../../src/shaders/shadow.frag" } };
+    sceneObject.mShaderPrograms["shadow_mesh"]      = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
     sceneObject.linkShaderPrograms();
 
     Camera camera({ 0.0f, 3.0f, 7.0f }, { 0.0f, 90.0f });
@@ -551,6 +552,16 @@ int main()
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
 
+            std::vector<SceneObject::IndirectMeshDraw> indirectMeshDraws(sceneObject.mViewCount);
+            for (int i{ 0 }; i < indirectMeshDraws.size(); ++i)
+            {
+                indirectMeshDraws[i].first = i * (sceneObject.mClusterCount / sceneObject.mViewCount);
+            }
+
+            map = glMapNamedBuffer(sceneObject.mClusterIndirectDrawBuffer, GL_WRITE_ONLY);
+            std::memcpy(map, indirectMeshDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectMeshDraw));
+            glUnmapNamedBuffer(sceneObject.mClusterIndirectDrawBuffer);
+
             Camera::Frustum frustum{ camera.getViewFrustum(proj) };
             frustum = Camera::makeViewFrustum(proj * view);
 
@@ -609,11 +620,13 @@ int main()
             glUniform1ui(loc, sceneObject.mClusterCount);
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "viewIndexCount");
             glUniform1ui(loc, sceneObject.mIndexCount);
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("occluder_batch").program, "clustersPerView");
+            glUniform1ui(loc, sceneObject.mClusterCount / sceneObject.mViewCount);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mIndirectDrawBuffers);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mClusterIndirectDrawBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mClustersSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mWriteIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mClusterBatchBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, sceneObject.mVisibilityBitmaskSsbo);
 
@@ -633,15 +646,17 @@ int main()
             glViewport(0, 0, screenWidth, screenHeight);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glBindVertexArray(sceneObject.mVao);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectDrawBuffers);
+            //glBindVertexArray(sceneObject.mVao);
+            //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mClusterIndirectDrawBuffer);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
-
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
+            /*
             glUseProgram(sceneObject.mShaderPrograms.at("uber").program);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "transform") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
@@ -649,31 +664,45 @@ int main()
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+            */
+            glUseProgram(sceneObject.mShaderPrograms.at("uber_mesh").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "transform") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "view") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "camPos") };
+            glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "clusterCount") }; // todo: does this exist???
+            glUniform1ui(loc, sceneObject.mClusterCount / sceneObject.mViewCount);
 
             glWaitSync(occluderBatchFence, GL_NONE, GL_TIMEOUT_IGNORED);
             glDeleteSync(occluderBatchFence);
 
-            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(0 * sizeof(SceneObject::IndirectDraw)));
-
+            //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(0 * sizeof(SceneObject::IndirectDraw)));
+            glDrawMeshTasksIndirectNV(0);
+            
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
 
             glViewport(0, 0, shadowMapLength, shadowMapLength);
 
-            glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
+            glUseProgram(sceneObject.mShaderPrograms.at("shadow_mesh").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
 
             glEnable(GL_DEPTH_CLAMP);
 
             for (int i{ 0 }; i < 3; ++i)
             {
-                glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[i].proj* lightCascadeMatrices[i].view));
+                glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view));
 
                 glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
                 glClear(GL_DEPTH_BUFFER_BIT);
 
-                glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+                //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+                glDrawMeshTasksIndirectNV((1 + i) * sizeof(SceneObject::IndirectMeshDraw));
             }
 
             glDisable(GL_DEPTH_CLAMP);
@@ -740,7 +769,7 @@ int main()
                     glDispatchCompute(std::ceil(hiZWidth / 32.0f), hiZHeight, 1);
                 }
             }
-            
+
             map = glMapNamedBuffer(sceneObject.mIndirectDrawBuffers, GL_WRITE_ONLY);
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectDrawBuffers);
@@ -749,17 +778,23 @@ int main()
             std::memcpy(map, indirectDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectDraw));
             glUnmapNamedBuffer(sceneObject.mIndirectBlendDrawBuffers);
 
+            map = glMapNamedBuffer(sceneObject.mClusterIndirectDrawBuffer, GL_WRITE_ONLY);
+            std::memcpy(map, indirectMeshDraws.data(), sceneObject.mViewCount * sizeof(SceneObject::IndirectMeshDraw));
+            glUnmapNamedBuffer(sceneObject.mClusterIndirectDrawBuffer);
+
             glUseProgram(sceneObject.mShaderPrograms.at("cluster_batch").program);
 
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "clusterCount");
             glUniform1ui(loc, sceneObject.mClusterCount);
             loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "viewIndexCount");
             glUniform1ui(loc, sceneObject.mIndexCount);
+            loc = glGetUniformLocation(sceneObject.mShaderPrograms.at("cluster_batch").program, "clustersPerView");
+            glUniform1ui(loc, sceneObject.mClusterCount / sceneObject.mViewCount);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0,  sceneObject.mIbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1,  sceneObject.mIndirectDrawBuffers);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1,  sceneObject.mClusterIndirectDrawBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2,  sceneObject.mClustersSsbo);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3,  sceneObject.mWriteIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3,  sceneObject.mClusterBatchBuffer);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4,  sceneObject.mIndirectBlendDrawBuffers);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5,  sceneObject.mWriteBlendIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6,  sceneObject.mMaterialsSsbo);
@@ -777,31 +812,38 @@ int main()
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
             glViewport(0, 0, screenWidth, screenHeight);
 
+            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mClusterIndirectDrawBuffer);
+
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
 
-            glUseProgram(sceneObject.mShaderPrograms.at("uber").program);
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "transform") };
+            glUseProgram(sceneObject.mShaderPrograms.at("uber_mesh").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "transform") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "view") };
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "view") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "camPos") };
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
 
             glWaitSync(clusterBatchFence, GL_NONE, GL_TIMEOUT_IGNORED);
             glDeleteSync(clusterBatchFence);
 
-            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+            //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+            glDrawMeshTasksIndirectNV(0);
 
             glViewport(0, 0, shadowMapLength, shadowMapLength);
 
-            glUseProgram(sceneObject.mShaderPrograms.at("shadow").program);
+            glUseProgram(sceneObject.mShaderPrograms.at("shadow_mesh").program);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow").program, "transform") };
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
 
             glEnable(GL_DEPTH_CLAMP);
 
@@ -811,11 +853,12 @@ int main()
 
                 glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
 
-                glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+                //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
+                glDrawMeshTasksIndirectNV((1 + i) * sizeof(SceneObject::IndirectMeshDraw));
             }
 
             glDisable(GL_DEPTH_CLAMP);
-
+            
             glViewport(0, 0, screenWidth, screenHeight);
 
             glDepthMask(GL_FALSE);
@@ -847,7 +890,7 @@ int main()
             glBindVertexArray(sceneObject.mBlendVao);
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mIndirectBlendDrawBuffers);
 
-            glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
+            //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
 
             glDepthFunc(GL_ALWAYS);
             glDisable(GL_BLEND);

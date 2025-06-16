@@ -29,6 +29,9 @@ SceneObject::~SceneObject()
 	glDeleteBuffers(1, &mWriteBlendIbo);
 	glDeleteBuffers(1, &mIndirectBlendDrawBuffers);
 
+	glDeleteBuffers(1, &mClusterBatchBuffer);
+	glDeleteBuffers(1, &mClusterIndirectDrawBuffer);
+
 	glDeleteBuffers(1, &mVisibilityBitmaskSsbo);
 
 	glDeleteBuffers(1, &mViewSsbo);
@@ -128,6 +131,13 @@ void SceneObject::initGlMemory()
 	glNamedBufferStorage(mIndirectDrawBuffers,      mViewCount * sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
 	glNamedBufferStorage(mIndirectBlendDrawBuffers, mViewCount * sizeof(IndirectDraw), &indirectDraw, GL_MAP_WRITE_BIT);
 
+	glCreateBuffers(1, &mClusterBatchBuffer);
+	glNamedBufferStorage(mClusterBatchBuffer, mClusterCount * sizeof(GLuint), nullptr, GL_NONE);
+
+	std::vector<IndirectMeshDraw> indirectMeshDraws(mViewCount);
+	glCreateBuffers(1, &mClusterIndirectDrawBuffer);
+	glNamedBufferStorage(mClusterIndirectDrawBuffer, mViewCount * sizeof(IndirectMeshDraw), indirectMeshDraws.data(), GL_MAP_WRITE_BIT);
+
 	glVertexArrayElementBuffer(mBlendVao, mWriteBlendIbo);
 
 	mViews = std::vector<View>(mViewCount);
@@ -147,12 +157,18 @@ void SceneObject::linkShaderPrograms()
 void SceneObject::linkShaderProgram(ShaderProgram& shaderProgram)
 {
 	shaderProgram.program = glCreateProgram();
-
+	
 	if (!shaderProgram.vsPath.empty())
 	{
 		auto vertexShader{ compileShader(shaderProgram.vsPath, GL_VERTEX_SHADER) };
 		glAttachShader(shaderProgram.program, vertexShader);
 		glDeleteShader(vertexShader);
+	}
+	if (!shaderProgram.msPath.empty())
+	{
+		auto meshShader{ compileShader(shaderProgram.msPath, GL_MESH_SHADER_NV) };
+		glAttachShader(shaderProgram.program, meshShader);
+		glDeleteShader(meshShader);
 	}
 	if (!shaderProgram.fsPath.empty())
 	{
@@ -172,8 +188,8 @@ void SceneObject::linkShaderProgram(ShaderProgram& shaderProgram)
 	GLint success{};
 	glGetProgramiv(shaderProgram.program, GL_LINK_STATUS, &success);
 	if (!success) {
-		GLchar infoLog[512]{};
-		glGetProgramInfoLog(shaderProgram.program, 512, nullptr, infoLog);
+		GLchar infoLog[1024]{};
+		glGetProgramInfoLog(shaderProgram.program, 1024, nullptr, infoLog);
 		std::cerr << infoLog << '\n';
 	}
 }

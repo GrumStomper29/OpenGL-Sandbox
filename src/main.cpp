@@ -274,14 +274,15 @@ int main()
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
         { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        //{ .name{"helmet"}, .path{ "../../assets/DamagedHelmet.glb" } },
+        //{.name{"bistro"}, .path{ "../../assets/structure.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/Bistro2.glb" } },
-        { .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
+        //{ .name{"cubes"}, .path{ "../../assets/cubes.glb" } },
     };
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
-    //sceneObject.mShaderPrograms["uber"]             = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/uber.frag" } };
     sceneObject.mShaderPrograms["uber_mesh"]     = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
     sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
     sceneObject.mShaderPrograms["comp"]             = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
@@ -289,7 +290,6 @@ int main()
     sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
     sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
     sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
-    //sceneObject.mShaderPrograms["shadow"]           = { .vsPath{ "../../src/shaders/shadow.vert" }, .fsPath{ "../../src/shaders/shadow.frag" } };
     sceneObject.mShaderPrograms["shadow_mesh"]      = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
     sceneObject.linkShaderPrograms();
 
@@ -335,16 +335,20 @@ int main()
     GLuint normalTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &normalTexture);
     glTextureStorage2D(normalTexture, 1, GL_RGBA16F, screenWidth, screenHeight); // todo: find better formats (after srgb)
+    GLuint metallicRoughnessTexture{};
+    glCreateTextures(GL_TEXTURE_2D, 1, &metallicRoughnessTexture);
+    glTextureStorage2D(metallicRoughnessTexture, 1, GL_RG16, screenWidth, screenHeight);
     GLuint depthTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &depthTexture);
     glTextureStorage2D(depthTexture, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
 
-    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture,   0);
-    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,   0);
-    glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,    0);
+    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture,            0);
+    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,            0);
+    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT2, metallicRoughnessTexture, 0);
+    glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,             0);
 
-    GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glNamedFramebufferDrawBuffers(opaqueFBO, 2, drawBuffersG);
+    GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glNamedFramebufferDrawBuffers(opaqueFBO, 3, drawBuffersG);
 
     GLuint transparentFBO{};
     glCreateFramebuffers(1, &transparentFBO);
@@ -484,7 +488,7 @@ int main()
 
         auto start{ std::chrono::system_clock::now() };
 
-        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 4.0f, 1.0f }) };
+        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 8.0f, 1.0f }) };
 
         glm::mat4 view{ camera.getViewMatrix() };
         auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
@@ -630,8 +634,8 @@ int main()
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, sceneObject.mVisibilityBitmaskSsbo);
 
-            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)), 
-                std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount) / 64.0f));
+            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f), 
+                std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f), std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f));
 
             GLsync occluderBatchFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -804,8 +808,8 @@ int main()
             
             glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
-            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount)),
-                std::ceil(std::cbrt(sceneObject.mClusterCount)), std::ceil(std::cbrt(sceneObject.mClusterCount) / 64.0f));
+            glDispatchCompute(std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f),
+                std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f), std::ceil(std::cbrt(sceneObject.mClusterCount) / 4.0f));
 
             GLsync clusterBatchFence{ glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, GL_NONE) };
 
@@ -903,6 +907,7 @@ int main()
             glBindTextureUnit(1, normalTexture);
             glBindTextureUnit(2, depthTexture);
             glBindTextureUnit(4, shadowMap);
+            glBindTextureUnit(6, metallicRoughnessTexture);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lightCascadeMatrixBuffer);
 
@@ -915,10 +920,14 @@ int main()
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::inverse(tp)));
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "view") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "camPos") };
+            glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
 
             glBindVertexArray(screenQuadVAO);
 
+            glEnable(GL_FRAMEBUFFER_SRGB);
             glDrawArrays(GL_TRIANGLES, 0, 6);
+            glDisable(GL_FRAMEBUFFER_SRGB);
             
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -948,6 +957,8 @@ int main()
     glDeleteTextures(1, &opaqueTexture);
     glDeleteTextures(1, &accumTexture);
     glDeleteTextures(1, &revealTexture);
+    glDeleteTextures(1, &normalTexture);
+    glDeleteTextures(1, &metallicRoughnessTexture);
     glDeleteTextures(1, &depthTexture);
     glDeleteTextures(1, &hiZTexture);
     glDeleteTextures(1, &shadowMap);

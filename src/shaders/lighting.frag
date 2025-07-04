@@ -3,6 +3,7 @@
 layout (binding = 0) uniform sampler2D inColor;
 layout (binding = 1) uniform sampler2D inNorm;
 layout (binding = 2) uniform sampler2D inDepth;
+layout (binding = 6) uniform sampler2D inMetallicRoughness;
 
 layout(binding = 3) uniform sampler2DArray hiZ;
 uniform int hiZLevel;
@@ -15,6 +16,8 @@ uniform float farZ;
 uniform mat4 invViewProj;
 
 uniform mat4 view;
+
+uniform vec3 camPos;
 
 layout (binding = 5, std430) readonly buffer LightMatrices
 {
@@ -48,32 +51,113 @@ float dither(ivec2 p)
     return mod(52.9829189f * mod(0.06711056f * float(p.x) + 0.00583715f * float(p.y), 1.0f), 1.0f);
 }
 
+
+// from https://64.github.io/tonemapping/
+float luminance(vec3 v)
+{
+    return dot(v, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+vec3 change_luminance(vec3 c_in, float l_out)
+{
+    float l_in = luminance(c_in);
+    return c_in * (l_out / l_in);
+}
+vec3 reinhard_extended_luminance(vec3 v, float max_white_l)
+{
+    float l_old = luminance(v);
+    float numerator = l_old * (1.0f + (l_old / (max_white_l * max_white_l)));
+    float l_new = numerator / (1.0f + l_old);
+    return change_luminance(v, l_new);
+}
+
+
+
+// PBR functionality from https://google.github.io/filament/Filament.html
+const float PI = 3.1415926535897932384626433832795;
+float D_GGX(float NoH, float roughness) 
+{
+    float a = NoH * roughness;
+    float k = roughness / (1.0 - NoH * NoH + a * a);
+    return k * k * (1.0 / PI);
+}
+float V_SmithGGXCorrelated(float NoV, float NoL, float roughness)
+{
+    float a2 = roughness * roughness;
+    float GGXV = NoL * sqrt(NoV * NoV * (1.0 - a2) + a2);
+    float GGXL = NoV * sqrt(NoL * NoL * (1.0 - a2) + a2);
+    return 0.5 / (GGXV + GGXL);
+}
+vec3 F_Schlick(float u, vec3 f0) 
+{
+	float f = pow(1.0 - u, 5.0);
+    return f + f0 * (1.0 - f);
+}
+
+float Fd_Lambert() 
+{
+    return 1.0 / PI;
+}
+
+vec3 brdf(vec3 v, vec3 l, vec3 n, vec3 f0, vec3 baseColor, float metallic, float perceptualRoughness) 
+{
+	vec3 diffuseColor = (1.0f - metallic) * baseColor;
+
+    vec3 h = normalize(v + l);
+
+    float NoV = abs(dot(n, v)) + 1e-5;
+    float NoL = clamp(dot(n, l), 0.0, 1.0);
+    float NoH = clamp(dot(n, h), 0.0, 1.0);
+    float LoH = clamp(dot(l, h), 0.0, 1.0);
+
+    float roughness = perceptualRoughness * perceptualRoughness;
+	
+    float D = D_GGX(NoH, roughness);
+    vec3  F = F_Schlick(LoH, f0);
+    float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
+
+    // specular BRDF
+    vec3 Fr = ((D * V) * F);
+	//Fr = vec3(0.0f);
+
+    // diffuse BRDF
+    vec3 Fd = diffuseColor * Fd_Lambert();
+
+	return Fr + Fd;
+}
+
+
+
+
 void main()
 {
-	const vec3 lightDir = normalize(const vec3(-2.0f, 4.0f, 1.0f));
-
 	ivec2 coords = ivec2(gl_FragCoord.xy);
 
+	vec4 baseColor = texelFetch(inColor, coords, 0);
+	baseColor = vec4(pow(baseColor.rgb, vec3(2.2f)), baseColor.a);
+
 	vec3 worldPos = reconstructFragmentWorldPositionFromDepth(texelFetch(inDepth, coords, 0).r, vec2(1440, 810), invViewProj);
-	vec3 worldNorm = normalize(cross(dFdx(worldPos), dFdy(worldPos)));
 
-	float shadowBias = 0.0015f;
-	float cosLightAngle = dot(lightDir, worldNorm);
-	float normalOffsetScale = clamp(1 - cosLightAngle, 0.0f, 1.0f);
+	vec3 norm = normalize(texelFetch(inNorm, coords, 0).xyz);
+	vec3 gWorldNorm = normalize(cross(dFdx(worldPos), dFdy(worldPos)));
 
-	worldPos += worldNorm * (normalOffsetScale + 0.1f);
+	vec2 metallicRoughness = texelFetch(inMetallicRoughness, coords, 0).rg;
 
-	outColor = texelFetch(inColor, coords, 0);
-	const vec3 lightCol = const vec3(0.99f, 0.98f, 0.83f);
 
-	const vec3 skyAmbientCol = const vec3(0.78f, 0.90f, 0.99f);
+	const vec3 lightDir = normalize(const vec3(-2.0f, 8.0f, 1.0f));
+	const vec3 lightCol = const vec3(1.0f, 0.851f, 0.713f) * 5.0f;
+
+	const vec3 skyAmbientCol = const vec3(0.765f, 0.820f, 1.0f);
 	float skyAmbientStrength = 0.7f;
 
 	vec3 ambient = skyAmbientStrength * skyAmbientCol;
 
-	float diffuse = max(dot(normalize(texelFetch(inNorm, coords, 0).xyz), lightDir), 0.0f);
+	float shadowBias = 0.0015f;
+	float cosLightAngle = dot(lightDir, gWorldNorm);
+	float normalOffsetScale = clamp(1 - cosLightAngle, 0.0f, 1.0f);
 
-	vec4 viewPos = view * vec4(worldPos, 1.0f);
+	vec3 shadowReceiverPos = worldPos + gWorldNorm * (normalOffsetScale + 0.1f);
+
+	vec4 viewPos = view * vec4(shadowReceiverPos, 1.0f);
 	float dither = dither(coords);
 	float depth = (viewPos.z) + dither * 2.0f;
 
@@ -87,7 +171,7 @@ void main()
 		layer = 0;
 	}
 
-	vec4 lightSpacePos = lightMatrices[layer] * vec4(worldPos, 1.0f);
+	vec4 lightSpacePos = lightMatrices[layer] * vec4(shadowReceiverPos, 1.0f);
 	vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
 	projCoords.xy = projCoords.xy * 0.5f + 0.5f;
 
@@ -107,12 +191,19 @@ void main()
 		}
 	}
 	shadow /= 9;
-
-	//if (projCoords.x < 0.0f || projCoords.x > 1.0f
-	//	|| projCoords.y < 0.0f || projCoords.y > 1.0f) outColor = vec4(0.0f, 0.0f, 1.0f, 1.0f);
+	//shadow = 0.0f;
 
 
-	diffuse *= 1.0f - shadow;
 
-	outColor = vec4((diffuse * lightCol + ambient), 1.0f) * outColor;
+	float reflectance = 0.4f;
+	vec3 f0 = 0.16f * reflectance * reflectance * (1.0f - metallicRoughness.r) + baseColor.rgb * metallicRoughness.r;
+
+	float NoL = clamp(dot(norm, lightDir), 0.0f, 1.0f);
+
+	outColor.rgb = (1.0f - shadow) * (brdf(normalize(camPos - worldPos), lightDir, norm, f0, baseColor.rgb, metallicRoughness.r, metallicRoughness.g)
+	* NoL * lightCol) + ambient * baseColor.rgb;
+
+
+	float whiteValue = luminance(lightCol) + luminance(ambient);
+	outColor = vec4(reinhard_extended_luminance(outColor.rgb, whiteValue), 1.0f);
 }

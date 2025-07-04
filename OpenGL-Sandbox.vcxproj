@@ -290,7 +290,6 @@
     <None Include="src\shaders\transparent.frag" />
     <None Include="src\shaders\uber.frag" />
     <None Include="src\shaders\uber.mesh" />
-    <None Include="src\shaders\uber.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

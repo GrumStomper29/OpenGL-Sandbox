@@ -520,10 +520,12 @@ void ModelObject::loadMaterials(const fastgltf::Expected<fastgltf::Asset>& asset
 		{
 			.colorFactor{ colorFactor },
 			.colorTexture{ colorTexture },
+			.metallicRoughnessTexture{ metallicRoughnessTexture },
 			.normalTexture{ normalTexture },
 			.metallicFactor{ asset->materials[i].pbrData.metallicFactor },
 			.roughnessFactor{ asset->materials[i].pbrData.roughnessFactor },
 			.hasColorTexture{ hasColorTexture },
+			.hasMetallicRoughnessTexture{ hasMetallicRoughnessTexture },
 			.hasNormalTexture{ hasNormalTexture },
 			.alphaMask{ asset->materials[i].alphaMode == fastgltf::AlphaMode::Mask },
 			.alphaCutoff{ asset->materials[i].alphaCutoff },

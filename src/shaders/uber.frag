@@ -58,8 +58,9 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
-out vec4 outColor;
-out vec4 outNorm;
+layout (location = 0) out vec4 outColor;
+layout (location = 1) out vec4 outNorm;
+layout (location = 2) out vec2 outMetallicRoughness;
 
 
 
@@ -94,13 +95,14 @@ void main()
 
 	if (materials[materialIndex].hasColorTex)
 	{
-		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * (materials[materialIndex].colorFactor);
+		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * materials[materialIndex].colorFactor;
 	}
 	else
 	{
 		outColor = materials[materialIndex].colorFactor;
 	}
 
+	// todo: will writes be canceled?
 	if (materials[materialIndex].alphaMask)
 	{
 		if (outColor.a < materials[materialIndex].alphaCutoff)
@@ -114,13 +116,10 @@ void main()
 	{
 		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv), 1.0f);
 	}
+	
+	outMetallicRoughness = vec2(materials[materialIndex].metallicFactor, materials[materialIndex].roughnessFactor);
+	if (materials[materialIndex].hasMetallicRoughnessTex)
+	{
+		outMetallicRoughness = ((texture(sampler2D(materials[materialIndex].metallicRoughnessTex), fsIn.uv)).bg) * outMetallicRoughness;
+	}
 }
-/*
-out vec4 outColor;
-out vec4 outNorm;
-void main()
-{
-	outColor = vec4(1.0f);
-	outNorm = vec4(0.0f, 0.0f, 1.0f, 0.0f);
-}
-*/

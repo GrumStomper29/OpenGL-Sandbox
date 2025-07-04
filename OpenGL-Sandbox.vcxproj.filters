@@ -361,9 +361,6 @@
     <None Include="src\shaders\uber.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="src\shaders\uber.vert">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
     <None Include="src\shaders\transparent.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>

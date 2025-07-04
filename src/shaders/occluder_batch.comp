@@ -4,24 +4,11 @@ uniform uint clusterCount;
 uniform uint viewIndexCount; // likely unused, todo: delete
 uniform uint clustersPerView;
 
+// todo: unused?
 layout(binding = 0, std430) readonly buffer IndexBuffer
 {
 	uint indices[];
 };
-/*
-struct IndirectDraw
-{
-	uint count;
-	uint instanceCount;
-	uint firstIndex;
-	int baseVertex;
-	uint baseInstance;
-};
-layout (binding = 1, std430) buffer IndirectDrawBuffers
-{
-	IndirectDraw indirectDraws[];
-};
-*/
 
 struct IndirectMeshDraw
 {
@@ -53,12 +40,7 @@ layout (binding = 2, std430) readonly buffer ClusterBuffer
 {
 	Cluster clusters[];
 };
-/*
-layout (binding = 3, std430) buffer IndexWriteBuffer
-{
-	uint writeIndices[];
-};
-*/
+
 layout (binding = 3, std430) buffer ClusterBatchBuffer
 {
 	uint writeClusters[];
@@ -98,17 +80,16 @@ layout (binding = 9, std430) buffer VisibilityBitmask
 
 
 // per cluster (clusters are meshlet instances)
-layout (local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
+layout (local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 void main()
 {
 	uint clusterId = 
-		(gl_WorkGroupID.z * 64u + gl_LocalInvocationID.z) * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
+		gl_WorkGroupID.z * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
 		gl_WorkGroupID.y * gl_NumWorkGroups.x +
 		gl_WorkGroupID.x;
+	clusterId = clusterId * 64 + gl_LocalInvocationIndex;
 
 	bool activeThread = clusterId < clusterCount;
-
-	clusterId *= uint(activeThread);
 
 	// test clusters against visibility bitmask. If they weren't visible last frame, they aren't occluders, and won't be batched.
 	uint i = clusterId / 32;
@@ -117,39 +98,13 @@ void main()
 	bool clusterWasVisible = bool(visibilityBitmask[i] & bits);
 
 	activeThread = activeThread && clusterWasVisible && !materials[clusters[clusterId].materialIndex].alphaBlend;
-/*
-	if (activeThread)
-	{
-		uint viewId = clusters[clusterId].viewId;
-		uint indexCount = clusters[clusterId].indexCount;
 
-		uint bufferStart = viewId * viewIndexCount + atomicAdd(indirectDraws[viewId].count, indexCount);
-		
-		for (int i = 0; i < indexCount; i++)
-		{
-			// 25 bits for cluster id, 7 bits for index.
-			// I should theoretically only need 6 for the index, but it doesn't work otherwise. Oh well :)
-			uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
-			writeIndices[bufferStart + i] = index;
-		}
-	}
-	*/
 	if (activeThread)
 	{
 		uint viewId = clusters[clusterId].viewId;
-		//uint indexCount = clusters[clusterId].indexCount;
 
 		uint index = viewId * clustersPerView + atomicAdd(indirectMeshDraws[viewId].count, 1);
-		
 		writeClusters[index] = clusterId;
-
-		//for (int i = 0; i < indexCount; i++)
-		{
-			// 25 bits for cluster id, 7 bits for index.
-			// I should theoretically only need 6 for the index, but it doesn't work otherwise. Oh well :)
-			//uint index = (clusterId << 7) | indices[clusters[clusterId].firstIndex + i];
-			//writeIndices[bufferStart + i] = index;
-		}
 	}
 
 }

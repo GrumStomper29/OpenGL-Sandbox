@@ -22,6 +22,8 @@
 
 #include "meshoptimizer/meshoptimizer.h"
 
+#include "stb/stb_image.h"
+
 #include <array>
 #include <cmath> // for cbrt, floor, and ceil
 #include <chrono>
@@ -216,6 +218,40 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
 }
 
 
+struct LoadTextureResults
+{
+    int width{};
+    int height{};
+    GLuint texture{};
+};
+LoadTextureResults loadTexture(const char* fileName, int desiredChannels, GLenum format, GLenum internalFormat, GLenum type)
+{
+    int width{};
+    int height{};
+    int channels{};
+    unsigned char* pixels{ stbi_load(fileName, &width, &height, &channels, desiredChannels) };
+
+    if (!pixels)
+    {
+        std::cerr << "Failure\n";
+    }
+
+    GLuint texture{};
+    glCreateTextures(GL_TEXTURE_2D, 1, &texture);
+    glTextureStorage2D(texture, 1, internalFormat, width, height);
+    glTextureSubImage2D(texture, 0, 0, 0, width, height, format, type, pixels);
+
+    stbi_image_free(pixels);
+
+    return
+    {
+        width,
+        height,
+        texture,
+    };
+}
+
+
 
 int main()
 {
@@ -283,14 +319,15 @@ int main()
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
-    sceneObject.mShaderPrograms["uber_mesh"]     = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
-    sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
+    sceneObject.mShaderPrograms["uber_mesh"]        = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
+    //sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
     sceneObject.mShaderPrograms["comp"]             = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
     sceneObject.mShaderPrograms["lighting"]         = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
     sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
     sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
     sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
     sceneObject.mShaderPrograms["shadow_mesh"]      = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
+    sceneObject.mShaderPrograms["skybox"]           = { .vsPath{ "../../src/shaders/skybox.vert" }, .fsPath{ "../../src/shaders/skybox.frag" } };
     sceneObject.linkShaderPrograms();
 
     Camera camera({ 0.0f, 3.0f, 7.0f }, { 0.0f, 90.0f });
@@ -406,6 +443,97 @@ int main()
     glCreateBuffers(1, &lightCascadeMatrixBuffer);
     glNamedBufferStorage(lightCascadeMatrixBuffer, 3 * sizeof(glm::mat4), nullptr, GL_MAP_WRITE_BIT);
 
+
+    //GLuint dfgTex{ loadTexture("../../assets/ibl/dfg.png", 2, GL_RG, GL_RG16F, GL_UNSIGNED_BYTE).texture };
+
+    const char* skyboxFileNames[]
+    {
+        "../../assets/cubemap/px.png",
+        "../../assets/cubemap/nx.png",
+        "../../assets/cubemap/py.png",
+        "../../assets/cubemap/ny.png",
+        "../../assets/cubemap/pz.png",
+        "../../assets/cubemap/nz.png",
+    };
+
+    GLuint skybox{};
+    glCreateTextures(GL_TEXTURE_CUBE_MAP, 1, &skybox);
+    glTextureStorage2D(skybox, 1, GL_RGB16F, 1024, 1024);
+
+    glTextureParameteri(skybox, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(skybox, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(skybox, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    for (int i{ 0 }; i < 6; ++i)
+    {
+        int width{};
+        int height{};
+        int channels{};
+        unsigned char* pixels{ stbi_load(skyboxFileNames[i], &width, &height, &channels, 3) };
+        glTextureSubImage3D(skybox, 0, 0, 0, i, 1024, 1024, 1, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+
+        stbi_image_free(pixels);
+    }
+
+    float skyboxVertices[]
+    {   
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f
+    };
+
+    GLuint skyboxVbo{};
+    glCreateBuffers(1, &skyboxVbo);
+    glNamedBufferStorage(skyboxVbo, sizeof(float) * 108, skyboxVertices, GL_NONE);
+
+    GLuint skyboxVao{};
+    glCreateVertexArrays(1, &skyboxVao);
+    glVertexArrayVertexBuffer(skyboxVao, 0, skyboxVbo, 0, 3 * sizeof(float));
+
+    glEnableVertexArrayAttrib(skyboxVao, 0);
+    glVertexArrayAttribFormat(skyboxVao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(skyboxVao, 0, 0);
+
+
+
     double lastTime{ SDL_GetTicks64() * 0.001 };
 
     Stats stats{};
@@ -488,7 +616,7 @@ int main()
 
         auto start{ std::chrono::system_clock::now() };
 
-        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -2.0f, 8.0f, 1.0f }) };
+        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -1.0f, 10.0f, 2.0f }) };
 
         glm::mat4 view{ camera.getViewMatrix() };
         auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
@@ -660,15 +788,7 @@ int main()
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
-            /*
-            glUseProgram(sceneObject.mShaderPrograms.at("uber").program);
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "transform") };
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "view") };
-            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber").program, "camPos") };
-            glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
-            */
+
             glUseProgram(sceneObject.mShaderPrograms.at("uber_mesh").program);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("uber_mesh").program, "transform") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
@@ -876,7 +996,7 @@ int main()
             glBindFramebuffer(GL_FRAMEBUFFER, transparentFBO);
             glClearNamedFramebufferfv(transparentFBO, GL_COLOR, 0, color0);
             glClearNamedFramebufferfv(transparentFBO, GL_COLOR, 1, color1);
-
+            /*
             glUseProgram(sceneObject.mShaderPrograms.at("transparent").program);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("transparent").program, "transform") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(tp));
@@ -884,7 +1004,7 @@ int main()
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("transparent").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
-
+            */
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
@@ -925,10 +1045,32 @@ int main()
 
             glBindVertexArray(screenQuadVAO);
 
+            glDepthMask(GL_TRUE);
+            //glDisable(GL_DEPTH_TEST);
             glEnable(GL_FRAMEBUFFER_SRGB);
             glDrawArrays(GL_TRIANGLES, 0, 6);
             glDisable(GL_FRAMEBUFFER_SRGB);
             
+            glUseProgram(sceneObject.mShaderPrograms.at("skybox").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("skybox").program, "proj") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(proj));
+            glm::mat4 viewRot{ glm::mat3{ view } };
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("skybox").program, "view") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(viewRot));
+            glBindTextureUnit(0, skybox);
+
+            //glDisable(GL_DEPTH_TEST);
+
+            glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_GEQUAL);
+            glDepthMask(GL_TRUE);
+            glBindVertexArray(skyboxVao);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            //glEnable(GL_DEPTH_TEST);
+
+
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -954,6 +1096,7 @@ int main()
     glDeleteFramebuffers(1, &transparentFBO);
     glDeleteFramebuffers(3, &shadowFBOs[0]);
     
+    glDeleteTextures(1, &skybox);
     glDeleteTextures(1, &opaqueTexture);
     glDeleteTextures(1, &accumTexture);
     glDeleteTextures(1, &revealTexture);

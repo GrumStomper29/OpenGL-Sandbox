@@ -428,7 +428,7 @@ void ModelObject::loadImages(const fastgltf::Expected<fastgltf::Asset>& asset)
 	{
 		// GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 		glCreateTextures(GL_TEXTURE_2D, 1, &mImages[i]);
-		glTextureStorage2D(mImages[i], std::floor(std::log2(std::max(datas[i].width, datas[i].width))) + 1,
+		glTextureStorage2D(mImages[i], std::floor(std::log2(std::max(datas[i].width, datas[i].height))) + 1,
 			GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, datas[i].width, datas[i].height);
 		glTextureSubImage2D(mImages[i], 0, 0, 0, datas[i].width, datas[i].height, GL_RGBA, GL_UNSIGNED_BYTE, datas[i].data);
 

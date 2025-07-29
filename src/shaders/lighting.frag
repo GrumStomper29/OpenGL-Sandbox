@@ -143,7 +143,7 @@ void main()
 	vec2 metallicRoughness = texelFetch(inMetallicRoughness, coords, 0).rg;
 
 
-	const vec3 lightDir = normalize(const vec3(-2.0f, 8.0f, 1.0f));
+	const vec3 lightDir = normalize(const vec3(-1.0f, 10.0f, 2.0f));
 	const vec3 lightCol = const vec3(1.0f, 0.851f, 0.713f) * 5.0f;
 
 	const vec3 skyAmbientCol = const vec3(0.765f, 0.820f, 1.0f);
@@ -206,4 +206,6 @@ void main()
 
 	float whiteValue = luminance(lightCol) + luminance(ambient);
 	outColor = vec4(reinhard_extended_luminance(outColor.rgb, whiteValue), 1.0f);
+
+	gl_FragDepth = texelFetch(inDepth, coords, 0).r;
 }

@@ -415,13 +415,21 @@ int main()
     GLuint shadowFBOs[3]{};
     glCreateFramebuffers(3, &shadowFBOs[0]);
 
+    GLuint shadowNormalMap{};
+    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowNormalMap);
+    glTextureStorage3D(shadowNormalMap, 1, GL_RGBA16F, shadowMapLength, shadowMapLength, 3); // TODO: FIND BETTER FORMATS
+    GLuint shadowRadiantFluxMap{};
+    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowRadiantFluxMap);
+    glTextureStorage3D(shadowRadiantFluxMap, 1, GL_RGBA16F, shadowMapLength, shadowMapLength, 3);
     GLuint shadowMap{};
-    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowMap);
+    glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowMap); // this format is fine
     glTextureStorage3D(shadowMap, 1, GL_DEPTH_COMPONENT32F, shadowMapLength, shadowMapLength, 3);
     glTextureParameteri(shadowMap, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
 
     for (int i{ 0 }; i < 3; ++i)
     {
+        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_COLOR_ATTACHMENT0, shadowNormalMap, 0, i);
+        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_COLOR_ATTACHMENT1, shadowRadiantFluxMap, 0, i);
         glNamedFramebufferTextureLayer(shadowFBOs[i], GL_DEPTH_ATTACHMENT, shadowMap, 0, i);
     }
     /*
@@ -771,7 +779,7 @@ int main()
             glDepthFunc(GL_GREATER);
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
-            glClearColor(0.78f, 0.90f, 0.99f, 1.0f);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClearDepth(0.0f);
 
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
@@ -806,6 +814,7 @@ int main()
             glDrawMeshTasksIndirectNV(0);
             
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
@@ -814,7 +823,11 @@ int main()
             glViewport(0, 0, shadowMapLength, shadowMapLength);
 
             glUseProgram(sceneObject.mShaderPrograms.at("shadow_mesh").program);
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "camPos") };
+            glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
+
 
             glEnable(GL_DEPTH_CLAMP);
 
@@ -823,7 +836,7 @@ int main()
                 glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view));
 
                 glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
-                glClear(GL_DEPTH_BUFFER_BIT);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
                 glDrawMeshTasksIndirectNV((1 + i) * sizeof(SceneObject::IndirectMeshDraw));
@@ -963,10 +976,15 @@ int main()
 
             glUseProgram(sceneObject.mShaderPrograms.at("shadow_mesh").program);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, sceneObject.mMaterialsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sceneObject.mVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, sceneObject.mTransformsSsbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, sceneObject.mIbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneObject.mClusterBatchBuffer);
+
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "camPos") };
+            glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
 
             glEnable(GL_DEPTH_CLAMP);
@@ -1097,6 +1115,8 @@ int main()
     glDeleteFramebuffers(3, &shadowFBOs[0]);
     
     glDeleteTextures(1, &skybox);
+    glDeleteTextures(1, &shadowRadiantFluxMap);
+    glDeleteTextures(1, &shadowNormalMap);
     glDeleteTextures(1, &opaqueTexture);
     glDeleteTextures(1, &accumTexture);
     glDeleteTextures(1, &revealTexture);

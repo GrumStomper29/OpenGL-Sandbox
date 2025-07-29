@@ -137,7 +137,7 @@ void main()
 
 	vec3 worldPos = reconstructFragmentWorldPositionFromDepth(texelFetch(inDepth, coords, 0).r, vec2(1440, 810), invViewProj);
 
-	vec3 norm = normalize(texelFetch(inNorm, coords, 0).xyz);
+	vec3 norm = texelFetch(inNorm, coords, 0).xyz;
 	vec3 gWorldNorm = normalize(cross(dFdx(worldPos), dFdy(worldPos)));
 
 	vec2 metallicRoughness = texelFetch(inMetallicRoughness, coords, 0).rg;

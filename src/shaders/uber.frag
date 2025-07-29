@@ -58,6 +58,8 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
+
+
 layout (location = 0) out vec4 outColor;
 layout (location = 1) out vec4 outNorm;
 layout (location = 2) out vec2 outMetallicRoughness;

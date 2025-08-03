@@ -99,10 +99,10 @@ std::array<glm::vec3, 8> getWorldSpaceFrustumCorners(const glm::mat4& proj, cons
 {
     std::array<glm::vec3, 8> corners
     {
-        glm::vec3{ -1.0f,  1.0f, -1.0f },
-        glm::vec3{  1.0f,  1.0f, -1.0f },
-        glm::vec3{  1.0f, -1.0f, -1.0f },
-        glm::vec3{ -1.0f, -1.0f, -1.0f },
+        glm::vec3{ -1.0f,  1.0f, 1.0f },
+        glm::vec3{  1.0f,  1.0f, 1.0f },
+        glm::vec3{  1.0f, -1.0f, 1.0f },
+        glm::vec3{ -1.0f, -1.0f, 1.0f },
         glm::vec3{ -1.0f,  1.0f,  1.0f },
         glm::vec3{  1.0f,  1.0f,  1.0f },
         glm::vec3{  1.0f, -1.0f,  1.0f },
@@ -140,6 +140,7 @@ struct ViewProj
     glm::mat4 proj{};
     float zNear{};
     float zFar{};
+    float cascadeRadius{};
 };
 
 // Heavily based on https://alextardif.com/shadowmapping.html
@@ -150,7 +151,7 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
     auto frustumCenter { getFrustumCenterFromCorners(frustumCorners) };
 
     glm::vec3 min{ std::numeric_limits<float>::max() };
-    glm::vec3 max{ std::numeric_limits<float>::min() };
+    glm::vec3 max{ std::numeric_limits<float>::lowest() };
     for (const auto& corner : frustumCorners)
     {
         const glm::vec3 trf{ glm::vec4{ corner, 1.0f } };
@@ -159,11 +160,13 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
     }
 
     float radius{ 0.5f * glm::distance(min, max) };
+    radius = std::floor(radius);
+    radius = 0.5f * glm::distance(frustumCorners[3], frustumCorners[5]);
     
     float texelsPerUnit{ static_cast<float>(shadowMapLength) / (2.0f * radius) };
 
     glm::mat4 scalar{ glm::scale(glm::mat4{ 1.0f }, glm::vec3{ texelsPerUnit }) };
-    glm::mat4 lookAt{ glm::lookAt(glm::vec3{ 0.0f }, -lightDir, glm::vec3{ 0.0f, 1.0f, 0.0f })};
+    glm::mat4 lookAt{ glm::lookAt(glm::vec3{ 0.0f }, lightDir, glm::vec3{ 0.0f, 1.0f, 0.0f })};
     lookAt = scalar * lookAt;
     //lookAt = lookAt * scalar; Not sure if order matters here
     glm::mat4 lookAtInv{ glm::inverse(lookAt) };
@@ -176,14 +179,17 @@ ViewProj calculateLightMatricesForCascade(const glm::mat4& cascadeProj, const gl
 
     glm::vec3 eye{ frustumCenter + (lightDir * (2.0f * radius)) };
 
+    //glm::vec3 origin{ 0.0f };
+
 
     ViewProj lightViewProj{};
     lightViewProj.view = glm::lookAt(eye, frustumCenter, glm::vec3{ 0.0f, 1.0f, 0.0f });
 
     // Near and far planes have swapped values for reverse-Z depth buffers
-    lightViewProj.proj = glm::orthoZO(-radius, radius, -radius, radius, 10.0f * radius, 10.0f * -radius);
+    lightViewProj.proj = glm::orthoZO(-radius, radius, -radius, radius, 15.0f * radius, 15.0f * -radius);
     lightViewProj.zNear = 10.0f * radius;
     lightViewProj.zFar = 10.0f * -radius;
+    lightViewProj.cascadeRadius = radius;
 
     return lightViewProj;
 
@@ -309,7 +315,7 @@ int main()
     std::vector<SceneObject::ModelObjectLoadInfo> modelLoadInfos
     {
         //{.name{"bistro"}, .path{ "../../assets/Sponza/Sponza.gltf" }, .directory{ "../../assets/Sponza" } },
-        { .name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
+        {.name{"bistro"}, .path{ "../../assets/Bistro1.glb" } },
         //{ .name{"helmet"}, .path{ "../../assets/DamagedHelmet.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/structure.glb" } },
         //{.name{"bistro"}, .path{ "../../assets/deccer2.glb" } },
@@ -319,20 +325,20 @@ int main()
     sceneObject.loadModels(modelLoadInfos);
     sceneObject.initGlMemory();
 
-    sceneObject.mShaderPrograms["uber_mesh"]        = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
+    sceneObject.mShaderPrograms["uber_mesh"] = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
     //sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
-    sceneObject.mShaderPrograms["comp"]             = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
-    sceneObject.mShaderPrograms["lighting"]         = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
-    sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
-    sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
-    sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
-    sceneObject.mShaderPrograms["shadow_mesh"]      = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
-    sceneObject.mShaderPrograms["skybox"]           = { .vsPath{ "../../src/shaders/skybox.vert" }, .fsPath{ "../../src/shaders/skybox.frag" } };
+    sceneObject.mShaderPrograms["comp"] = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
+    sceneObject.mShaderPrograms["lighting"] = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
+    sceneObject.mShaderPrograms["occluder_batch"] = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
+    sceneObject.mShaderPrograms["cluster_batch"] = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
+    sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" } };
+    sceneObject.mShaderPrograms["shadow_mesh"] = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
+    sceneObject.mShaderPrograms["skybox"] = { .vsPath{ "../../src/shaders/skybox.vert" }, .fsPath{ "../../src/shaders/skybox.frag" } };
     sceneObject.linkShaderPrograms();
 
     Camera camera({ 0.0f, 3.0f, 7.0f }, { 0.0f, 90.0f });
 
-    float screenQuadVerts[] = 
+    float screenQuadVerts[] =
     {
         // Position				// UV
         -1.0f, -1.0f, 0.0f,		0.0f, 0.0f,
@@ -379,10 +385,10 @@ int main()
     glCreateTextures(GL_TEXTURE_2D, 1, &depthTexture);
     glTextureStorage2D(depthTexture, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
 
-    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture,            0);
-    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture,            0);
+    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT0, opaqueTexture, 0);
+    glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT1, normalTexture, 0);
     glNamedFramebufferTexture(opaqueFBO, GL_COLOR_ATTACHMENT2, metallicRoughnessTexture, 0);
-    glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT,  depthTexture,             0);
+    glNamedFramebufferTexture(opaqueFBO, GL_DEPTH_ATTACHMENT, depthTexture, 0);
 
     GLenum drawBuffersG[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
     glNamedFramebufferDrawBuffers(opaqueFBO, 3, drawBuffersG);
@@ -410,7 +416,7 @@ int main()
     GLuint64 hiZTexHandle{ glGetTextureHandleARB(hiZTexture) };
     glMakeTextureHandleResidentARB(hiZTexHandle);
 
-    constexpr int shadowMapLength{ 2048 };
+    constexpr int shadowMapLength{ 1024 };
 
     GLuint shadowFBOs[3]{};
     glCreateFramebuffers(3, &shadowFBOs[0]);
@@ -424,14 +430,23 @@ int main()
     GLuint shadowMap{};
     glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &shadowMap); // this format is fine
     glTextureStorage3D(shadowMap, 1, GL_DEPTH_COMPONENT32F, shadowMapLength, shadowMapLength, 3);
-    glTextureParameteri(shadowMap, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    //glTextureParameteri(shadowMap, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
 
     for (int i{ 0 }; i < 3; ++i)
     {
-        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_COLOR_ATTACHMENT0, shadowNormalMap, 0, i);
+        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_COLOR_ATTACHMENT0, shadowNormalMap,      0, i);
         glNamedFramebufferTextureLayer(shadowFBOs[i], GL_COLOR_ATTACHMENT1, shadowRadiantFluxMap, 0, i);
-        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_DEPTH_ATTACHMENT, shadowMap, 0, i);
+        glNamedFramebufferTextureLayer(shadowFBOs[i], GL_DEPTH_ATTACHMENT, shadowMap,             0, i);
+
+        glNamedFramebufferDrawBuffers(shadowFBOs[i], 2, drawBuffers);
     }
+
+    GLuint shadowMapShadowSampler{};
+    glCreateSamplers(1, &shadowMapShadowSampler);
+    glSamplerParameteri(shadowMapShadowSampler, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    GLuint shadowMapDepthSampler{};
+    glCreateSamplers(1, &shadowMapDepthSampler);
+
     /*
     //glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER)
     if (glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -447,9 +462,15 @@ int main()
         glMakeTextureHandleResidentARB(shadowHiZHandles[i]);
     }
 
+    struct CsmGlslData
+    {
+        glm::mat4 viewProj{};
+        glm::mat4 radius{}; // Packing workaround. Radius will be stored in [0][0]
+    };
+
     GLuint lightCascadeMatrixBuffer{};
     glCreateBuffers(1, &lightCascadeMatrixBuffer);
-    glNamedBufferStorage(lightCascadeMatrixBuffer, 3 * sizeof(glm::mat4), nullptr, GL_MAP_WRITE_BIT);
+    glNamedBufferStorage(lightCascadeMatrixBuffer, 3 * sizeof(CsmGlslData), nullptr, GL_MAP_WRITE_BIT);
 
 
     //GLuint dfgTex{ loadTexture("../../assets/ibl/dfg.png", 2, GL_RG, GL_RG16F, GL_UNSIGNED_BYTE).texture };
@@ -546,7 +567,7 @@ int main()
 
     Stats stats{};
     bool updateViewFrustum{ true };
-    int hiZDisplayLevel{ 0 };
+    glm::vec3 inLightDir{ -1.0f, 10.0f, 2.0f };
 
     glm::mat4 hiZView{ 1.0f };
 
@@ -624,7 +645,7 @@ int main()
 
         auto start{ std::chrono::system_clock::now() };
 
-        const glm::vec3 lightDirection{ glm::normalize(glm::vec3{ -1.0f, 10.0f, 2.0f }) };
+        glm::vec3 lightDirection{ glm::normalize(inLightDir) };
 
         glm::mat4 view{ camera.getViewMatrix() };
         auto proj = infiniteReversePerspective(glm::radians(camera.mFov), 16.0f / 9.0f, camera.mZNear);
@@ -642,13 +663,14 @@ int main()
         void* map{};
         map = glMapNamedBuffer(lightCascadeMatrixBuffer, GL_WRITE_ONLY);
         {
-            glm::mat4 lightViewProj[3]{};
+            CsmGlslData lightViewProj[3]{};
             for (int i{ 0 }; i < 3; ++i)
             {
-                lightViewProj[i] = lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view;
+                lightViewProj[i].viewProj = lightCascadeMatrices[i].proj * lightCascadeMatrices[i].view;
+                lightViewProj[i].radius[0][0] = lightCascadeMatrices[i].cascadeRadius;
             }
 
-            std::memcpy(map, &lightViewProj[0], 3 * sizeof(glm::mat4));
+            std::memcpy(map, lightViewProj, 3 * sizeof(CsmGlslData));
         }
         glUnmapNamedBuffer(lightCascadeMatrixBuffer);
 
@@ -666,6 +688,7 @@ int main()
         ImGui::Begin("Debug");
         ImGui::Text("frametime %f ms", stats.frameTime);
         ImGui::InputText("shader program", selectedProgram, 512);
+        ImGui::InputFloat3("light direction", &inLightDir[0]);
         if (ImGui::Button("hot reload"))
         {
             if (auto found{ sceneObject.mShaderPrograms.find(std::string{ selectedProgram }) }; found != sceneObject.mShaderPrograms.end())
@@ -825,6 +848,8 @@ int main()
             glUseProgram(sceneObject.mShaderPrograms.at("shadow_mesh").program);
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "lightDir") };
+            glUniform3fv(loc, 1, glm::value_ptr(lightDirection));
 
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
 
@@ -984,6 +1009,8 @@ int main()
 
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "lightDir") };
+            glUniform3fv(loc, 1, glm::value_ptr(lightDirection));
 
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("shadow_mesh").program, "transform") };
 
@@ -1044,15 +1071,26 @@ int main()
             glBindTextureUnit(0, opaqueTexture);
             glBindTextureUnit(1, normalTexture);
             glBindTextureUnit(2, depthTexture);
+
             glBindTextureUnit(4, shadowMap);
+            glBindSampler(4, shadowMapShadowSampler);
+
+            glBindTextureUnit(5, shadowMap);
+            glBindSampler(5, shadowMapDepthSampler);
+
             glBindTextureUnit(6, metallicRoughnessTexture);
+            glBindTextureUnit(7, shadowNormalMap);
+            glBindTextureUnit(8, shadowRadiantFluxMap);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, lightCascadeMatrixBuffer);
 
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "nearZ") };
-            glUniform1f(loc, lightCascadeMatrices[hiZDisplayLevel].zNear);
-            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "farZ") };
-            glUniform1i(loc, lightCascadeMatrices[hiZDisplayLevel].zFar);
+            //loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "nearZ") };
+            //glUniform1f(loc, lightCascadeMatrices[hiZDisplayLevel].zNear);
+            //loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "farZ") };
+            //glUniform1i(loc, lightCascadeMatrices[hiZDisplayLevel].zFar);
+
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "shadowInvViewProj") };
+            glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::inverse(lightCascadeMatrices[0].proj * lightCascadeMatrices[0].view)));
 
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "invViewProj") };
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::inverse(tp)));
@@ -1060,6 +1098,8 @@ int main()
             glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(view));
             loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "camPos") };
             glUniform3fv(loc, 1, glm::value_ptr(camera.mPos));
+            loc = { glGetUniformLocation(sceneObject.mShaderPrograms.at("lighting").program, "lightDir") };
+            glUniform3fv(loc, 1, glm::value_ptr(lightDirection));
 
             glBindVertexArray(screenQuadVAO);
 
@@ -1114,6 +1154,9 @@ int main()
     glDeleteFramebuffers(1, &transparentFBO);
     glDeleteFramebuffers(3, &shadowFBOs[0]);
     
+    glDeleteSamplers(1, &shadowMapDepthSampler);
+    glDeleteSamplers(1, &shadowMapShadowSampler);
+
     glDeleteTextures(1, &skybox);
     glDeleteTextures(1, &shadowRadiantFluxMap);
     glDeleteTextures(1, &shadowNormalMap);

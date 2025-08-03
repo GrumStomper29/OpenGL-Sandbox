@@ -58,6 +58,8 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
+uniform vec3 lightDir;
+
 
 
 layout (location = 0) out vec4 outNorm;
@@ -97,8 +99,6 @@ const float PI = 3.1415926535897932384626433832795;
 // Potentially ignore normal maps for optimization
 void main()
 {
-	// This is cancer
-	const vec3 lightDir = normalize(const vec3(-1.0f, 10.0f, 2.0f));
 	const vec3 lightCol = const vec3(1.0f, 0.851f, 0.713f) * 5.0f;
 
 	int materialIndex = clusters[fsIn.clusterId].materialIndex;
@@ -112,12 +112,12 @@ void main()
 		outRadiantFlux = materials[materialIndex].colorFactor;
 	}
 
-	// todo: will writes be canceled?
 	if (materials[materialIndex].alphaMask)
 	{
 		if (outRadiantFlux.a < materials[materialIndex].alphaCutoff)
 		{
-			discard;
+			// Causes shadows to disappear at further cascades
+			//discard;
 		}
 	}
 
@@ -129,5 +129,6 @@ void main()
 
 	const float lambert = 1.0f / PI;
 	float NoL = clamp(dot(outNorm.xyz, lightDir), 0.0f, 1.0f);
-	outRadiantFlux = (outRadiantFlux * lambert) * NoL;
+	float a = 0.5f + 0.5f * dot(outNorm.xyz, vec3(0.0f, 1.0f, 0.0f));
+	outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * a * (vec4(0.765f, 0.820f, 1.0f, 1.0f) * 0.075f);
 }

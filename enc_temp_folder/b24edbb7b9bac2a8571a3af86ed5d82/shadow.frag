@@ -58,11 +58,12 @@ layout (binding = 1, std430) readonly buffer MaterialBlock
 	Material materials[];
 };
 
+uniform vec3 lightDir;
 
 
-layout (location = 0) out vec4 outColor;
-layout (location = 1) out vec4 outNorm;
-layout (location = 2) out vec2 outMetallicRoughness;
+
+layout (location = 0) out vec4 outNorm;
+layout (location = 1) out vec4 outRadiantFlux;
 
 
 
@@ -91,40 +92,46 @@ vec3 perturbNormal(vec3 normal, vec3 viewspacePos, int materialIndex, vec2 uv)
 	return normalize(tbn * map);
 }
 
+
+
+const float PI = 3.1415926535897932384626433832795;
+
+// Potentially ignore normal maps for optimization
 void main()
 {
+	// This is cancer
+	const vec3 lightCol = const vec3(1.0f, 0.851f, 0.713f) * 5.0f;
+
 	int materialIndex = clusters[fsIn.clusterId].materialIndex;
 
 	if (materials[materialIndex].hasColorTex)
 	{
-		outColor = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * materials[materialIndex].colorFactor;
+		outRadiantFlux = (texture(sampler2D(materials[materialIndex].baseColorTex), fsIn.uv)) * materials[materialIndex].colorFactor;
 	}
 	else
 	{
-		outColor = materials[materialIndex].colorFactor;
+		outRadiantFlux = materials[materialIndex].colorFactor;
 	}
 
 	// todo: will writes be canceled?
 	if (materials[materialIndex].alphaMask)
 	{
-		if (outColor.a < materials[materialIndex].alphaCutoff)
+		if (outRadiantFlux.a < materials[materialIndex].alphaCutoff)
 		{
-			discard;
+			// Causes shadows to disappear at further cascades
+			//discard;
 		}
 	}
 
-	vec3 norm = normalize(fsIn.norm);
-	outNorm.zw = vec2(atan(norm.y, norm.x) / 3.1415926f, norm.z);
+	outNorm = vec4(normalize(fsIn.norm), 0.0f);
 	if (materials[materialIndex].hasNormalTex)
 	{
-		norm = perturbNormal(norm, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv);
+		outNorm = vec4(perturbNormal(outNorm.xyz, fsIn.camPosMinusWorldVert, materialIndex, fsIn.uv), 1.0f);
 	}
-	outNorm.xy = vec2(atan(norm.y, norm.x) / 3.1415926f, norm.z);
-	outNorm = outNorm * 0.5f + 0.5f;
-	
-	outMetallicRoughness = vec2(materials[materialIndex].metallicFactor, materials[materialIndex].roughnessFactor);
-	if (materials[materialIndex].hasMetallicRoughnessTex)
-	{
-		outMetallicRoughness = ((texture(sampler2D(materials[materialIndex].metallicRoughnessTex), fsIn.uv)).bg) * outMetallicRoughness;
-	}
+
+	const float lambert = 1.0f / PI;
+	float NoL = clamp(dot(outNorm.xyz, lightDir), 0.0f, 1.0f);
+	//outRadiantFlux = (outRadiantFlux * lambert) * NoL;
+	outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * vec4(0.765f, 0.820f, 1.0f, 1.0f) * 0.7f * 1.0f;
+	//outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * vec4(0.5f, 0.5f, 0.5f, 1.0f) * 1.0f * 1.0f;
 }

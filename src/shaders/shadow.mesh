@@ -12,6 +12,15 @@ out gl_MeshPerVertexNV
 	vec4 gl_Position;
 } gl_MeshVerticesNV[];
 
+out Interpolant
+{
+	vec3 norm;
+	vec2 uv;
+	vec3 camPosMinusWorldVert;
+	flat uint clusterId;
+} OUT[];
+
+
 
 struct Cluster
 {
@@ -65,12 +74,15 @@ layout (binding = 5, std430) buffer ClusterBatchBuffer
 
 
 uniform mat4 transform;
+uniform vec3 camPos;
 
 
 
 void main()
 {
 	uint clusterId = clusterIds[gl_WorkGroupID.x];
+
+	mat3 normalTransform = inverse(transpose(mat3(transforms[clusters[clusterId].transformIndex])));
 
 	for (int i = 0; i < 2; ++i)
 	{
@@ -82,6 +94,15 @@ void main()
 		Vertex vertex = vertices[vertexIndex];
 
 		gl_MeshVerticesNV[v].gl_Position = transform * transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f);
+
+		OUT[v].norm = normalTransform * vertex.normal;
+
+		OUT[v].uv.x = vertex.u;
+		OUT[v].uv.y = vertex.v;
+
+		OUT[v].camPosMinusWorldVert = camPos - (transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f)).xyz;
+
+		OUT[v].clusterId = clusterId;
 	}
 	/*
 	for (int i = 0; i < clusters[clusterId].vertexCount; ++i)

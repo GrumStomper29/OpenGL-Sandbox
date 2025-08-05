@@ -84,6 +84,8 @@ void main()
 {
 	uint clusterId = clusterIds[gl_WorkGroupID.x];
 	
+	mat3 normalTransform = inverse(transpose(mat3(transforms[clusters[clusterId].transformIndex])));
+
 	for (int i = 0; i < 2; ++i)
 	{
 		uint v = gl_LocalInvocationID.x * 2 + (i);
@@ -94,8 +96,6 @@ void main()
 		Vertex vertex = vertices[vertexIndex];
 
 		gl_MeshVerticesNV[v].gl_Position = transform * transforms[clusters[clusterId].transformIndex] * vec4(vertex.pos, 1.0f);
-
-		mat3 normalTransform = inverse(transpose(mat3(transforms[clusters[clusterId].transformIndex])));
 
 		OUT[v].norm = normalTransform * vertex.normal;
 

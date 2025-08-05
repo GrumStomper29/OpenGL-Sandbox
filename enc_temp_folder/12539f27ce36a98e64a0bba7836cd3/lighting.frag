@@ -14,8 +14,13 @@ layout (binding = 5) uniform sampler2DArray shadowDepthMap;
 layout (binding = 7) uniform sampler2DArray	shadowNormalMap;
 layout (binding = 8) uniform sampler2DArray	shadowRadiantFluxMap;
 
+//uniform float nearZ;
+//uniform float farZ;
+
 uniform mat4 invViewProj;
+
 uniform mat4 view;
+
 uniform vec3 camPos;
 
 uniform vec3 lightDir;
@@ -27,6 +32,7 @@ struct LightMatrices
 };
 layout (binding = 5, std430) readonly buffer LightMatricesBuffer
 {
+	//mat4 lightMatrices[];
 	LightMatrices lightMatrices[];
 };
 
@@ -45,7 +51,7 @@ vec3 reconstructFragmentWorldPositionFromDepth(float depth, vec2 screenSize, mat
 
     return position_ws.xyz;
 }
-vec3 reconstructFragmentWorldPositionFromDepth(vec2 fragCoord, float depth, vec2 screenSize, mat4 invViewProj)
+vec3 reconstructFragmentWorldPositionFromDepth2(vec2 fragCoord, float depth, vec2 screenSize, mat4 invViewProj)
 {
     //float z = depth * 2.0 - 1.0; // [0, 1] -> [-1, 1]
 	float z = depth;
@@ -54,7 +60,7 @@ vec3 reconstructFragmentWorldPositionFromDepth(vec2 fragCoord, float depth, vec2
 
     // undo view + projection
     vec4 position_ws = invViewProj * position_ndc;
-    position_ws /= position_ws.w;
+    //position_ws /= position_ws.w;
 
     return position_ws.xyz;
 }
@@ -163,29 +169,32 @@ vec2 hammersley(uint i, uint N)
   return vec2(float(i) / float(N), float(bitfieldReverse(i)) * 2.3283064365386963e-10);
 }
 
-const int rsmSamples = 100;
+const int rsmSamples = 200;
+//const float rsmRMax = 0.5f;
+
+// todo: extend for cascades
+uniform mat4 shadowInvViewProj;
 
 vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 lightInvViewProj)
 {
 	float rsmRMax = 0.5f;
 
-	float rMaxScale = lightMatrices[0].radius[0][0] / lightMatrices[cascade].radius[0][0];
-	rsmRMax *= rMaxScale;
-	
-	vec3 p0 = reconstructFragmentWorldPositionFromDepth(rsmUv * textureSize(shadowDepthMap, 0).xy, 
+	vec3 outLight;
+
+	vec3 p0 = reconstructFragmentWorldPositionFromDepth2(rsmUv * textureSize(shadowDepthMap, 0).xy, 
 		0.0f, ivec2(textureSize(shadowDepthMap, 0).xy), lightInvViewProj);
-	vec3 p1 = reconstructFragmentWorldPositionFromDepth(vec2(rsmUv.x + rsmRMax, rsmUv.y) * textureSize(shadowDepthMap, 0).xy, 
+	vec3 p1 = reconstructFragmentWorldPositionFromDepth2(vec2(rsmUv.x + rsmRMax, rsmUv.y) * textureSize(shadowDepthMap, 0).xy, 
 		0.0f, ivec2(textureSize(shadowDepthMap, 0).xy), lightInvViewProj);
 
 	float rMaxWorld = distance(p0, p1);
-	
+
+
+	//rsmRMax /= rMaxWorld;
+
   float normalizationFactor = 2.0f * rMaxWorld * rMaxWorld;
 
-  vec3 outLight = vec3(0.0f);
-  
 	for (int i = 0; i < rsmSamples; ++i)
 	{
-	
 		vec2 xi = hammersley(i, rsmSamples);
 		float r = xi.x;
 		float theta = xi.y * (2.0f * PI);
@@ -194,7 +203,7 @@ vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 light
 		float weight = xi.x;
 
 		float depth = texture(shadowDepthMap, vec3(plUv, cascade)).x;
-		vec3 plPos = reconstructFragmentWorldPositionFromDepth(plUv * textureSize(shadowDepthMap, 0).xy, 
+		vec3 plPos = reconstructFragmentWorldPositionFromDepth2(plUv * textureSize(shadowDepthMap, 0).xy, 
 		depth, ivec2(textureSize(shadowDepthMap, 0).xy), lightInvViewProj);
 
 		vec3 plNorm = texture(shadowNormalMap, vec3(plUv, cascade)).xyz;
@@ -204,9 +213,10 @@ vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 light
 		outLight += pixelLightContrib(fragPos, fragNorm, plPos, plNorm, radiantFlux) * weight;
 	}
 
+	//return normalizationFactor * outLight;
+	//return vec3(rMaxWorld/10.0);
 	return normalizationFactor * outLight / rsmSamples;
 }
-
 
 
 // From https://therealmjp.github.io/posts/storing-normals-using-spherical-coordinates/
@@ -239,10 +249,12 @@ void main()
 
 	vec2 metallicRoughness = texelFetch(inMetallicRoughness, coords, 0).rg;
 
+
+	//const vec3 lightDir = normalize(const vec3(-1.0f, 10.0f, 2.0f));
 	const vec3 lightCol = const vec3(1.0f, 0.851f, 0.713f) * 5.0f;
 
 	const vec3 skyAmbientCol = const vec3(0.765f, 0.820f, 1.0f);
-	float skyAmbientStrength = 0.075f;
+	float skyAmbientStrength = 0.7f;
 
 	vec3 ambient = skyAmbientStrength * skyAmbientCol;
 
@@ -283,14 +295,41 @@ void main()
 			vec2 offset = vec2((x * 2) - 1, (y * 2) - 1) * texelSize;
 			offset = vec2(x, y) * texelSize;
 
+			//vec4 gather = textureGatherOffset(shadowMap, vec3(projCoords.xy, shadowCascade), projCoords.z, ivec2(x, y));
+
 			shadow += texture(shadowMap, vec4(projCoords.xy + offset, shadowCascade, projCoords.z + 0.00008f));
 		}
 	}
 	shadow /= 9;
 
+	//shadow = texture(shadowMap, vec4(projCoords.xy, shadowCascade, projCoords.z));
+
+
+	if (shadowCascade == 0 && depth < -9.0f)
+	{
+		//shadowCascade = 1;
+	}
+	
+	ambient *= 0.5f;
 	float a = 0.5f + 0.5f * dot(norm, vec3(0.0f, 1.0f, 0.0f));
 	ambient *= a;
-	ambient += computeRSM(worldPos, norm, projCoords.xy, shadowCascade, inverse(lightMatrices[shadowCascade].viewProj));
+
+	//ambient *= 0;
+
+	vec3 irr = computeRSM(worldPos, norm, projCoords.xy, shadowCascade, inverse(lightMatrices[shadowCascade].viewProj));
+
+	//ambient += irr;
+	ambient += irr * 3;
+
+	if (irr.r < 0.01f && irr.g < 0.01f && irr.b < 0.01f)
+	{
+		//ambient += irr;
+	}
+	else
+	{
+		//ambient = irr;
+	}
+
 
 
 	float reflectance = 0.4f;
@@ -302,9 +341,12 @@ void main()
 	* NoL * lightCol) + ambient * baseColor.rgb;
 
 
-	// todo: exposure parameter in the gui
-	float whiteValue = luminance(lightCol);
+	float whiteValue = luminance(lightCol) + 0.0f;// + luminance(ambient);
 	outColor = vec4(reinhard_extended_luminance(outColor.rgb, whiteValue), 1.0f);
+
+	//outColor = texture(shadowRadiantFluxMap, vec3(projCoords.xy, 0.0f));
+	//outColor = vec4(ambient, 1.0f);
+	//outColor = vec4(norm, 1.0f);
 
 	gl_FragDepth = texelFetch(inDepth, coords, 0).r;
 }

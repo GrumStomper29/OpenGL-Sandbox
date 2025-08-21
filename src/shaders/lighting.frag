@@ -32,6 +32,8 @@ layout (binding = 5, std430) readonly buffer LightMatricesBuffer
 
 layout (location = 0) out vec4 outColor;
 
+
+
 vec3 reconstructFragmentWorldPositionFromDepth(float depth, vec2 screenSize, mat4 invViewProj)
 {
     //float z = depth * 2.0 - 1.0; // [0, 1] -> [-1, 1]
@@ -150,7 +152,7 @@ vec3 brdf(vec3 v, vec3 l, vec3 n, vec3 f0, vec3 baseColor, float metallic, float
 vec3 pixelLightContrib(vec3 fragPos, vec3 fragNorm, vec3 plPos, vec3 plNorm, vec3 radiantFlux)
 {
 	float geometry = max(0.0f, dot(plNorm,   (fragPos - plPos  )))
-	 * max(0.0f, dot(fragNorm, (plPos   - fragPos)));
+				   * max(0.0f, dot(fragNorm, (plPos   - fragPos)));
 
 	float d = max(distance(fragPos, plPos), 0.01f);
 
@@ -179,9 +181,9 @@ vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 light
 
 	float rMaxWorld = distance(p0, p1);
 	
-  float normalizationFactor = 2.0f * rMaxWorld * rMaxWorld;
+    float normalizationFactor = 2.0f * rMaxWorld * rMaxWorld;
 
-  vec3 outLight = vec3(0.0f);
+	vec3 outLight = vec3(0.0f);
   
 	for (int i = 0; i < rsmSamples; ++i)
 	{
@@ -199,11 +201,13 @@ vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 light
 
 		vec3 plNorm = texture(shadowNormalMap, vec3(plUv, cascade)).xyz;
 
+		//plUv = rsmUv;
 		vec3 radiantFlux = texture(shadowRadiantFluxMap, vec3(plUv, cascade)).rgb;
 
 		outLight += pixelLightContrib(fragPos, fragNorm, plPos, plNorm, radiantFlux) * weight;
+		//outLight = radiantFlux;
 	}
-
+	//return outLight / rsmSamples;
 	return normalizationFactor * outLight / rsmSamples;
 }
 
@@ -228,6 +232,7 @@ void main()
 	ivec2 coords = ivec2(gl_FragCoord.xy);
 
 	vec4 baseColor = texelFetch(inColor, coords, 0);
+	//baseColor = vec4(0.5f, 0.0f, 0.0f, 1.0f);
 	baseColor = vec4(pow(baseColor.rgb, vec3(2.2f)), baseColor.a);
 
 	vec3 worldPos = reconstructFragmentWorldPositionFromDepth(texelFetch(inDepth, coords, 0).r, vec2(1440, 810), invViewProj);
@@ -243,6 +248,7 @@ void main()
 
 	const vec3 skyAmbientCol = const vec3(0.765f, 0.820f, 1.0f);
 	float skyAmbientStrength = 0.075f;
+	//skyAmbientStrength = 1.0f;
 
 	vec3 ambient = skyAmbientStrength * skyAmbientCol;
 
@@ -289,7 +295,7 @@ void main()
 	shadow /= 9;
 
 	float a = 0.5f + 0.5f * dot(norm, vec3(0.0f, 1.0f, 0.0f));
-	ambient *= a;
+	ambient *= a * 0.5f;
 	ambient += computeRSM(worldPos, norm, projCoords.xy, shadowCascade, inverse(lightMatrices[shadowCascade].viewProj));
 
 
@@ -297,7 +303,7 @@ void main()
 	vec3 f0 = 0.16f * reflectance * reflectance * (1.0f - metallicRoughness.r) + baseColor.rgb * metallicRoughness.r;
 
 	float NoL = clamp(dot(norm, lightDir), 0.0f, 1.0f);
-
+	
 	outColor.rgb = (1.0f - shadow) * (brdf(normalize(camPos - worldPos), lightDir, norm, f0, baseColor.rgb, metallicRoughness.r, metallicRoughness.g)
 	* NoL * lightCol) + ambient * baseColor.rgb;
 
@@ -305,6 +311,10 @@ void main()
 	// todo: exposure parameter in the gui
 	float whiteValue = luminance(lightCol);
 	outColor = vec4(reinhard_extended_luminance(outColor.rgb, whiteValue), 1.0f);
+	//outColor = baseColor;
+	//outColor = vec4(baseColor.rgb, 1.0f);
+	//outColor = vec4(ambient * baseColor.rgb, 1.0f);
+	//outColor = vec4(ambient, 1.0f);
 
 	gl_FragDepth = texelFetch(inDepth, coords, 0).r;
 }

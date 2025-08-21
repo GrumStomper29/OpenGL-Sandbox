@@ -282,6 +282,7 @@
     <None Include="src\shaders\comp.frag" />
     <None Include="src\shaders\comp.vert" />
     <None Include="src\shaders\depth_downsample.comp" />
+    <None Include="src\shaders\fxaa.frag" />
     <None Include="src\shaders\lighting.frag" />
     <None Include="src\shaders\occluder_batch.comp" />
     <None Include="src\shaders\shadow.frag" />

@@ -327,13 +327,14 @@ int main()
 
     sceneObject.mShaderPrograms["uber_mesh"] = { .msPath{ "../../src/shaders/uber.mesh" }, .fsPath{ "../../src/shaders/uber.frag" } };
     //sceneObject.mShaderPrograms["transparent"]      = { .vsPath{ "../../src/shaders/uber.vert" }, .fsPath{ "../../src/shaders/transparent.frag" } };
-    sceneObject.mShaderPrograms["comp"] = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
-    sceneObject.mShaderPrograms["lighting"] = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
-    sceneObject.mShaderPrograms["occluder_batch"] = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
-    sceneObject.mShaderPrograms["cluster_batch"] = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
-    sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" } };
-    sceneObject.mShaderPrograms["shadow_mesh"] = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
-    sceneObject.mShaderPrograms["skybox"] = { .vsPath{ "../../src/shaders/skybox.vert" }, .fsPath{ "../../src/shaders/skybox.frag" } };
+    sceneObject.mShaderPrograms["comp"]             = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/comp.frag" } };
+    sceneObject.mShaderPrograms["lighting"]         = { .vsPath{ "../../src/shaders/comp.vert" }, .fsPath{ "../../src/shaders/lighting.frag" } };
+    sceneObject.mShaderPrograms["occluder_batch"]   = { .computePath{ "../../src/shaders/occluder_batch.comp" } };
+    sceneObject.mShaderPrograms["cluster_batch"]    = { .computePath{ "../../src/shaders/cluster_batch.comp" } };
+    sceneObject.mShaderPrograms["depth_downsample"] = { .computePath{ "../../src/shaders/depth_downsample.comp" }};
+    sceneObject.mShaderPrograms["shadow_mesh"]      = { .msPath{ "../../src/shaders/shadow.mesh" }, .fsPath{ "../../src/shaders/shadow.frag" } };
+    sceneObject.mShaderPrograms["skybox"]           = { .vsPath{ "../../src/shaders/skybox.vert" }, .fsPath{ "../../src/shaders/skybox.frag" } };
+    sceneObject.mShaderPrograms["fxaa"]             = { .vsPath{ "../../src/shaders/comp.vert" },   .fsPath{ "../../src/shaders/fxaa.frag"   } };
     sceneObject.linkShaderPrograms();
 
     Camera camera({ 0.0f, 3.0f, 7.0f }, { 0.0f, 90.0f });
@@ -410,6 +411,19 @@ int main()
     GLenum drawBuffers[]{ GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
     glNamedFramebufferDrawBuffers(transparentFBO, 2, drawBuffers);
 
+    GLuint aaStagingFb{};
+    glCreateFramebuffers(1, &aaStagingFb);
+    GLuint aaStagingTex{};
+    glCreateTextures(GL_TEXTURE_2D, 1, &aaStagingTex);
+    glTextureStorage2D(aaStagingTex, 1, GL_SRGB8_ALPHA8, screenWidth, screenHeight);
+    glNamedFramebufferTexture(aaStagingFb, GL_COLOR_ATTACHMENT0, aaStagingTex, 0);
+    GLuint aaStagingDepthTex{};
+    glCreateTextures(GL_TEXTURE_2D, 1, &aaStagingDepthTex);
+    glTextureStorage2D(aaStagingDepthTex, 1, GL_DEPTH_COMPONENT32F, screenWidth, screenHeight);
+    glNamedFramebufferTexture(aaStagingFb, GL_DEPTH_ATTACHMENT, aaStagingDepthTex, 0);
+    GLenum soManyDrawBuffers[]{ GL_COLOR_ATTACHMENT0, GL_DEPTH_ATTACHMENT };
+    glNamedFramebufferDrawBuffers(aaStagingFb, 2, drawBuffers);
+
     GLuint hiZTexture{};
     glCreateTextures(GL_TEXTURE_2D, 1, &hiZTexture);
     glTextureStorage2D(hiZTexture, std::floor(std::log2(std::max(screenWidth, screenHeight))) + 1, GL_R32F, screenWidth, screenHeight);
@@ -441,17 +455,16 @@ int main()
         glNamedFramebufferDrawBuffers(shadowFBOs[i], 2, drawBuffers);
     }
 
+    
+    if (glCheckNamedFramebufferStatus(aaStagingFb, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+        
     GLuint shadowMapShadowSampler{};
     glCreateSamplers(1, &shadowMapShadowSampler);
     glSamplerParameteri(shadowMapShadowSampler, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
     GLuint shadowMapDepthSampler{};
     glCreateSamplers(1, &shadowMapDepthSampler);
 
-    /*
-    //glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER)
-    if (glCheckNamedFramebufferStatus(shadowFBOs[0], GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
-        */
     GLuint shadowHiZs[3]{};
     glCreateTextures(GL_TEXTURE_2D, 3, &shadowHiZs[0]);
     GLuint64 shadowHiZHandles[3]{};
@@ -808,9 +821,6 @@ int main()
             glBindFramebuffer(GL_FRAMEBUFFER, opaqueFBO);
             glViewport(0, 0, screenWidth, screenHeight);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-            //glBindVertexArray(sceneObject.mVao);
-            //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sceneObject.mWriteIbo);
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, sceneObject.mClusterIndirectDrawBuffer);
 
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
@@ -833,7 +843,6 @@ int main()
             glWaitSync(occluderBatchFence, GL_NONE, GL_TIMEOUT_IGNORED);
             glDeleteSync(occluderBatchFence);
 
-            //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>(0 * sizeof(SceneObject::IndirectDraw)));
             glDrawMeshTasksIndirectNV(0);
             
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sceneObject.mClustersSsbo);
@@ -863,7 +872,6 @@ int main()
                 glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
                 glDrawMeshTasksIndirectNV((1 + i) * sizeof(SceneObject::IndirectMeshDraw));
             }
 
@@ -994,7 +1002,6 @@ int main()
             glWaitSync(clusterBatchFence, GL_NONE, GL_TIMEOUT_IGNORED);
             glDeleteSync(clusterBatchFence);
 
-            //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr);
             glDrawMeshTasksIndirectNV(0);
 
             glViewport(0, 0, shadowMapLength, shadowMapLength);
@@ -1022,7 +1029,6 @@ int main()
 
                 glBindFramebuffer(GL_FRAMEBUFFER, shadowFBOs[i]);
 
-                //glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, reinterpret_cast<void*>((1 + i) * sizeof(SceneObject::IndirectDraw)));
                 glDrawMeshTasksIndirectNV((1 + i) * sizeof(SceneObject::IndirectMeshDraw));
             }
 
@@ -1064,7 +1070,10 @@ int main()
             glDepthFunc(GL_ALWAYS);
             glDisable(GL_BLEND);
 
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, aaStagingFb);
+            //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(sceneObject.mShaderPrograms.at("lighting").program);
 
@@ -1128,6 +1137,7 @@ int main()
             glDrawArrays(GL_TRIANGLES, 0, 36);
             //glEnable(GL_DEPTH_TEST);
 
+            glBindVertexArray(screenQuadVAO);
 
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1137,7 +1147,25 @@ int main()
             glBindTextureUnit(0, accumTexture);
             glBindTextureUnit(1, revealTexture);
 
+            //glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+            glUseProgram(sceneObject.mShaderPrograms.at("fxaa").program);
+            glBindTextureUnit(0, aaStagingTex);
+
+            glDisable(GL_DEPTH_TEST);
+
+            glEnable(GL_FRAMEBUFFER_SRGB);
             glDrawArrays(GL_TRIANGLES, 0, 6);
+            glDisable(GL_FRAMEBUFFER_SRGB);
+
+            //glBlitNamedFramebuffer(aaStagingFb, 0, 0, 0, screenWidth, screenHeight, 0, 0, screenWidth, screenHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+            //glBindImageTexture(0, opaqye);
         }
 
         ImGui::Render();
@@ -1153,10 +1181,13 @@ int main()
     glDeleteFramebuffers(1, &opaqueFBO);
     glDeleteFramebuffers(1, &transparentFBO);
     glDeleteFramebuffers(3, &shadowFBOs[0]);
+    glDeleteFramebuffers(1, &aaStagingFb);
     
     glDeleteSamplers(1, &shadowMapDepthSampler);
     glDeleteSamplers(1, &shadowMapShadowSampler);
 
+    glDeleteTextures(1, &aaStagingDepthTex);
+    glDeleteTextures(1, &aaStagingTex);
     glDeleteTextures(1, &skybox);
     glDeleteTextures(1, &shadowRadiantFluxMap);
     glDeleteTextures(1, &shadowNormalMap);

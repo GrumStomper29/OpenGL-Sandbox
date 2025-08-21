@@ -130,5 +130,6 @@ void main()
 	const float lambert = 1.0f / PI;
 	float NoL = clamp(dot(outNorm.xyz, lightDir), 0.0f, 1.0f);
 	float a = 0.5f + 0.5f * dot(outNorm.xyz, vec3(0.0f, 1.0f, 0.0f));
-	outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * a * (vec4(0.765f, 0.820f, 1.0f, 1.0f) * 0.075f);
+	//outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * a * (vec4(0.765f, 0.820f, 1.0f, 1.0f) * 0.075f);
+	outRadiantFlux = (outRadiantFlux * lambert) * NoL + outRadiantFlux * (vec4(0.765f, 0.820f, 1.0f, 1.0f));
 }

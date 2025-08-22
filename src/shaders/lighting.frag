@@ -201,13 +201,11 @@ vec3 computeRSM(vec3 fragPos, vec3 fragNorm, vec2 rsmUv, int cascade, mat4 light
 
 		vec3 plNorm = texture(shadowNormalMap, vec3(plUv, cascade)).xyz;
 
-		//plUv = rsmUv;
 		vec3 radiantFlux = texture(shadowRadiantFluxMap, vec3(plUv, cascade)).rgb;
 
 		outLight += pixelLightContrib(fragPos, fragNorm, plPos, plNorm, radiantFlux) * weight;
-		//outLight = radiantFlux;
 	}
-	//return outLight / rsmSamples;
+
 	return normalizationFactor * outLight / rsmSamples;
 }
 
@@ -232,7 +230,6 @@ void main()
 	ivec2 coords = ivec2(gl_FragCoord.xy);
 
 	vec4 baseColor = texelFetch(inColor, coords, 0);
-	//baseColor = vec4(0.5f, 0.0f, 0.0f, 1.0f);
 	baseColor = vec4(pow(baseColor.rgb, vec3(2.2f)), baseColor.a);
 
 	vec3 worldPos = reconstructFragmentWorldPositionFromDepth(texelFetch(inDepth, coords, 0).r, vec2(1440, 810), invViewProj);
@@ -248,7 +245,6 @@ void main()
 
 	const vec3 skyAmbientCol = const vec3(0.765f, 0.820f, 1.0f);
 	float skyAmbientStrength = 0.075f;
-	//skyAmbientStrength = 1.0f;
 
 	vec3 ambient = skyAmbientStrength * skyAmbientCol;
 
@@ -260,7 +256,7 @@ void main()
 
 	vec4 viewPos = view * vec4(shadowReceiverPos, 1.0f);
 	float dither = dither(coords);
-	//dither = 0;
+
 	viewPos.z += dither * 2.0f;
 	float depth = (viewPos.z) + dither * 2.0f;
 	depth = viewPos.z;
@@ -307,14 +303,9 @@ void main()
 	outColor.rgb = (1.0f - shadow) * (brdf(normalize(camPos - worldPos), lightDir, norm, f0, baseColor.rgb, metallicRoughness.r, metallicRoughness.g)
 	* NoL * lightCol) + ambient * baseColor.rgb;
 
-
 	// todo: exposure parameter in the gui
 	float whiteValue = luminance(lightCol);
 	outColor = vec4(reinhard_extended_luminance(outColor.rgb, whiteValue), 1.0f);
-	//outColor = baseColor;
-	//outColor = vec4(baseColor.rgb, 1.0f);
-	//outColor = vec4(ambient * baseColor.rgb, 1.0f);
-	//outColor = vec4(ambient, 1.0f);
 
 	gl_FragDepth = texelFetch(inDepth, coords, 0).r;
 }
